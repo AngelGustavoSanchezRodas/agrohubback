@@ -1,0 +1,18 @@
+# Entornos virtuales
+.venv/
+__pycache__/
+
+# Variables de entorno y credenciales
+.env
+firebase-credentials.json
+
+# Ignorar el archivo de credenciales JSON de Firebase
+firebase-credentials.json
+
+# Ignorar variables de entorno
+.env
+
+# Ignorar caché de Python
+__pycache__/
+*.pyc
+
