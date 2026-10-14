@@ -1,6 +1,15 @@
-fastapi
-uvicorn
-firebase-admin
-supabase
-python-dotenv
-pyjwt
+# Framework Web y Servidor ASGI
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+
+# Persistencia Dual (Tiempo Real y Relacional)
+firebase-admin>=6.5.0
+supabase>=2.4.0
+
+# Seguridad y Autenticacion
+pyjwt>=2.8.0
+cryptography>=42.0.0
+
+# Configuracion y Validacion de Datos
+python-dotenv>=1.0.0
+pydantic>=2.6.0

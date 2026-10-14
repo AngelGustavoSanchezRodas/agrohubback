@@ -1,52 +1,81 @@
 from datetime import datetime
 from typing import Any
 from fastapi import APIRouter, HTTPException
-from db.firebase_client import obtener_db_referencia
+from schemas.telemetria import PayloadESP32
+from db.firebase_client import firebase_db
 from db.supabase_client import supabase
-from schemas.telemetria import TelemetriaESP32, RespuestaHistorial
 
-router = APIRouter(prefix="/api", tags=["Telemetria y Sensores"])
+router = APIRouter(prefix="/api/telemetria", tags=["Sensores"])
 
-@router.post("/telemetria")
-def recibir_telemetria(datos: TelemetriaESP32) -> dict[str, str]:
+@router.post("/ingesta")
+@router.post("", include_in_schema=False)
+def recibir_datos_esp32(payload: PayloadESP32) -> dict[str, str]:
     """
-    Recibe lecturas emitidas por el microcontrolador ESP32
-    y las persiste en Firebase Realtime Database y en Supabase.
+    Endpoint exclusivo para el hardware. 
+    Recibe los datos del ESP32, actualiza el estado en vivo en Firebase y guarda el historial en Supabase.
     """
     timestamp_actual = datetime.utcnow().isoformat()
-    datos_procesados = datos.dict()
-    datos_procesados["timestamp"] = timestamp_actual
-
+    
     try:
-        # 1. Escritura en Firebase Realtime Database (Estado en tiempo real)
-        ref_estado = obtener_db_referencia(f"invernadero/{datos.id_dispositivo}/estado_actual")
-        ref_estado.set(datos_procesados)
+        # 1. Actualizar Firebase (Tiempo Real para Next.js)
+        ref = firebase_db.reference(f"invernadero/{payload.id_dispositivo}/estado_actual")
+        ref.set({
+            "temperatura": payload.temperatura,
+            "humedad_ambiente": payload.humedad_ambiente,
+            "humedad_suelo": payload.humedad_suelo,
+            "timestamp": timestamp_actual,
+        })
+        
+        # 2. Guardar en Supabase (Historial Relacional)
+        # Asegurarse de que el nombre de la tabla coincida con el esquema SQL
+        supabase.table("telemetria_historica").insert({
+            "id_dispositivo": payload.id_dispositivo,
+            "temperatura": payload.temperatura,
+            "humedad_ambiente": payload.humedad_ambiente,
+            "humedad_suelo": payload.humedad_suelo,
+        }).execute()
 
-        # 2. Escritura en Supabase (Historico relacional)
-        datos_supabase = {
-            "id_dispositivo": datos.id_dispositivo,
-            "temperatura": datos.temperatura,
-            "humedad_ambiente": datos.humedad_ambiente,
-            "humedad_suelo": datos.humedad_suelo,
-            "radiacion_solar": datos.radiacion_solar,
-            "luz_uv": datos.luz_uv,
-        }
-        supabase.table("telemetria_historica").insert(datos_supabase).execute()
+        return {"status": "ok", "mensaje": "Telemetria almacenada exitosamente"}
 
-        return {
-            "mensaje": "Datos guardados en Firebase y Supabase",
-            "status": "ok",
-        }
     except Exception as e:
+        print(f"Error procesando telemetria: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Error critico en la persistencia de datos: {str(e)}",
+            status_code=500, 
+            detail="Error interno al persistir los datos",
         )
 
-@router.get("/historial", response_model=RespuestaHistorial)
-def obtener_historial_telemetria(limite: int = 24) -> dict[str, Any]:
+@router.get("/historial/{id_dispositivo}")
+def obtener_historial_dispositivo(id_dispositivo: str, limite: int = 50) -> dict[str, Any]:
     """
-    Devuelve los ultimos registros de telemetria almacenados en Supabase.
+    Endpoint para el Frontend.
+    Extrae los ultimos N registros de Supabase filtrados por id_dispositivo.
+    """
+    try:
+        respuesta = (
+            supabase.table("telemetria_historica")
+            .select("*")
+            .eq("id_dispositivo", id_dispositivo)
+            .order("creado_en", desc=True)
+            .limit(limite)
+            .execute()
+        )
+            
+        return {
+            "dispositivo": id_dispositivo,
+            "total_registros": len(respuesta.data),
+            "datos": respuesta.data,
+        }
+    except Exception as e:
+        print(f"Error consultando historial: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Error consultando el historial de Supabase",
+        )
+
+@router.get("/historial")
+def obtener_historial_general(limite: int = 50) -> dict[str, Any]:
+    """
+    Endpoint para consultar los ultimos registros generales de telemetria en Supabase.
     """
     try:
         respuesta = (
@@ -57,12 +86,12 @@ def obtener_historial_telemetria(limite: int = 24) -> dict[str, Any]:
             .execute()
         )
         return {
-            "status": "ok",
-            "total": len(respuesta.data),
+            "total_registros": len(respuesta.data),
             "datos": respuesta.data,
         }
-    except Exception:
+    except Exception as e:
+        print(f"Error consultando el historial general de Supabase: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Error consultando el historial en Supabase",
+            status_code=500, 
+            detail="Error consultando el historial de Supabase",
         )

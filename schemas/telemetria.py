@@ -1,6 +1,31 @@
 from typing import Any
 from pydantic import BaseModel, Field
 
+class PayloadESP32(BaseModel):
+    """Esquema de telemetria recibido del microcontrolador ESP32 con validacion de rangos."""
+    id_dispositivo: str = Field(
+        ..., 
+        description="Identificador unico del ESP32, ej: invernadero_01"
+    )
+    temperatura: float = Field(
+        ..., 
+        ge=-10.0, 
+        le=80.0, 
+        description="Temperatura ambiente en grados Celsius"
+    )
+    humedad_ambiente: float = Field(
+        ..., 
+        ge=0.0, 
+        le=100.0, 
+        description="Humedad relativa del aire en porcentaje"
+    )
+    humedad_suelo: float = Field(
+        ..., 
+        ge=0.0, 
+        le=100.0, 
+        description="Humedad del sustrato en porcentaje"
+    )
+
 class TelemetriaESP32(BaseModel):
     """Esquema de datos recibido del microcontrolador ESP32."""
     id_dispositivo: str = Field(..., description="Identificador unico del dispositivo IoT")

@@ -1,8 +1,5 @@
 from supabase import create_client, Client
-from core.config import settings
+from core.config import SUPABASE_URL, SUPABASE_KEY
 
-def obtener_supabase_cliente() -> Client:
-    """Crea y retorna una instancia configurada del cliente Supabase."""
-    return create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-
-supabase: Client = obtener_supabase_cliente()
+# Crear y exportar el cliente de Supabase
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
