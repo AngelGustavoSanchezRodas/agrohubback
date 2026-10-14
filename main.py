@@ -28,6 +28,36 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Inicializar la aplicación FastAPI
 app = FastAPI(title="API AgroIoT - Invernaderos")
 
+from fastapi.middleware.cors import CORSMiddleware
+
+# 1. Configurar CORS (Permite que el frontend se comunique con esta API)
+# Cuando subas a producción (Vercel), debes cambiar "*" por la URL de tu frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 2. Estructura para recibir comandos del Frontend
+class ComandoActuador(BaseModel):
+    estado: bool
+
+# 3. Endpoint para controlar la bomba de agua
+@app.post("/api/control/bomba")
+def controlar_bomba(comando: ComandoActuador):
+    # Aqui iria la logica para enviar la senal al ESP32 (por ejemplo, actualizando 
+    # una variable "bomba_activa" en Firebase que el ESP32 este escuchando)
+    
+    estado_str = "ENCENDIDA" if comando.estado else "APAGADA"
+    print(f"Comando recibido: Bomba de agua {estado_str}")
+    
+    return {
+        "mensaje": "Orden de control procesada con exito",
+        "bomba_encendida": comando.estado
+    }
+
 # Definir la estructura exacta que esperamos del ESP32 (DTO)
 class TelemetriaESP32(BaseModel):
     id_dispositivo: str
