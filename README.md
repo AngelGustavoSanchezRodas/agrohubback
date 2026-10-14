@@ -209,14 +209,30 @@ curl -X POST "http://localhost:8000/api/telemetria" \
 
 ---
 
-## 📂 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```text
 AgroHubBack/
-├── .env.example             # Plantilla de variables de entorno
-├── .gitignore               # Exclusión de archivos sensibles y entornos
-├── firebase-credentials.json # Credenciales de servicio Firebase (ignorado en git)
-├── main.py                  # Punto de entrada de la aplicación FastAPI
-├── README.md                # Documentación del proyecto
-└── requirements.txt         # Lista de dependencias del proyecto
+├── app/
+│   ├── core/                  # Configuracion global, Firebase, Supabase y seguridad JWT
+│   │   ├── config.py
+│   │   ├── firebase.py
+│   │   ├── security.py
+│   │   └── supabase_client.py
+│   ├── routers/               # Rutas y controladores de FastAPI
+│   │   ├── control.py
+│   │   └── telemetria.py
+│   ├── schemas/               # Modelos Pydantic (DTOs)
+│   │   ├── actuador.py
+│   │   └── telemetria.py
+│   └── services/              # Logica de negocio y persistencia desacoplada
+│       ├── actuador_service.py
+│       └── telemetria_service.py
+├── .env.example               # Plantilla de variables de entorno
+├── .gitignore                 # Exclusion de archivos sensibles y entornos
+├── firebase-credentials.json  # Credenciales de servicio Firebase (ignorado en git)
+├── GEMINI.md                  # Reglas de desarrollo y directrices de ingenieria
+├── main.py                    # Punto de entrada e inicializacion de FastAPI
+├── README.md                  # Documentacion del proyecto
+└── requirements.txt           # Lista de dependencias del proyecto
 ```

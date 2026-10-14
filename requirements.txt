@@ -2,4 +2,5 @@ fastapi
 uvicorn
 firebase-admin
 supabase
-python-dotenv
+python-dotenv
+pyjwt
