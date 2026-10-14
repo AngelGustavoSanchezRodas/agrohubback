@@ -1,4 +1,4 @@
-# 🌾 AgroHub Backend - API AgroIoT (Invernaderos)
+# AgroHub Backend - API AgroIoT (Invernaderos)
 
 Backend desarrollado con **FastAPI** para la ingesta, procesamiento y persistencia de telemetría proveniente de dispositivos IoT (ESP32) instalados en invernaderos.
 
@@ -8,7 +8,7 @@ El sistema implementa una persistencia dual:
 
 ---
 
-## 📋 Requisitos Previos
+## Requisitos Previos
 
 Asegúrate de contar con las siguientes herramientas instaladas en tu equipo:
 
@@ -19,7 +19,7 @@ Asegúrate de contar con las siguientes herramientas instaladas en tu equipo:
 
 ---
 
-## 🚀 Instalación y Puesta en Marcha
+## Instalación y Puesta en Marcha
 
 Sigue estos pasos en orden para clonar el repositorio, configurar el entorno e iniciar el servidor.
 
@@ -112,6 +112,9 @@ FIREBASE_URL=https://<tu-proyecto>-default-rtdb.firebaseio.com/
 # Configuración de Supabase
 SUPABASE_URL=https://<tu-id-proyecto>.supabase.co
 SUPABASE_KEY=tu_supabase_api_key_o_secret
+
+# Configuración de Seguridad JWT
+JWT_SECRET=tu_clave_secreta_jwt_aqui
 ```
 
 #### B. Credenciales de Firebase (`firebase-credentials.json`)
@@ -122,7 +125,7 @@ SUPABASE_KEY=tu_supabase_api_key_o_secret
    firebase-credentials.json
    ```
 
-> ⚠️ **Importante:** Por seguridad, tanto el archivo `.env` como `firebase-credentials.json` están incluidos en el `.gitignore` y **nunca** deben subirse a repositorios públicos o remotos.
+> **Importante:** Por seguridad, tanto el archivo `.env` como `firebase-credentials.json` están incluidos en el `.gitignore` y **nunca** deben subirse a repositorios públicos o remotos.
 
 ---
 
@@ -165,7 +168,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
-## 📡 Endpoints de la API
+## Endpoints de la API
 
 ### Ingesta de Telemetría ESP32
 
