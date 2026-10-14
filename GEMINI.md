@@ -23,10 +23,10 @@ Este documento define las directrices obligatorias, estándares de ingeniería y
 - Resolver siempre la causa raiz de los problemas. No aplicar soluciones provisionales, trucos superficiales ni parches rapidos.
 - Prohibido suprimir advertencias o errores del analizador estatico usando directivas como `# type: ignore` o `# noqa` sin una justificacion tecnica explicita e insalvable.
 - Respetar la arquitectura modular del proyecto en FastAPI:
-  - `app/core/`: Configuracion global, inicializacion de clientes externos (Firebase, Supabase) y seguridad (autenticacion JWT y dependencias de seguridad).
-  - `app/schemas/`: Definicion estricta de esquemas de datos y validacion mediante Pydantic (DTOs).
-  - `app/routers/`: Enrutadores de FastAPI divididos por dominio (telemetria, control de actuadores, historial).
-  - `app/services/`: Logica de negocio y persistencia desacoplada de los controladores HTTP.
+  - `core/`: Configuracion global (`config.py`) y seguridad JWT (`security.py`).
+  - `schemas/`: Definicion estricta de esquemas de datos y validacion mediante Pydantic (`telemetria.py`).
+  - `api/`: Enrutadores de FastAPI divididos por dominio (`rutas_auth.py`, `rutas_sensores.py`, `rutas_control.py`).
+  - `db/`: Clientes y conexion a bases de datos (`firebase_client.py`, `supabase_client.py`).
   - `main.py`: Punto de entrada que inicializa la aplicacion FastAPI, middlewares (CORS) e incluye los enrutadores.
 
 ---

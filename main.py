@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
-from app.routers.control import router as router_control
-from app.routers.telemetria import router as router_telemetria
+from core.config import settings
+from api.rutas_auth import router as router_auth
+from api.rutas_sensores import router as router_sensores
+from api.rutas_control import router as router_control
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -16,8 +17,9 @@ app.add_middleware(
 )
 
 # Registro de enrutadores modulares
+app.include_router(router_auth)
+app.include_router(router_sensores)
 app.include_router(router_control)
-app.include_router(router_telemetria)
 
 @app.get("/", tags=["Estado"])
 def estado_api() -> dict[str, str]:

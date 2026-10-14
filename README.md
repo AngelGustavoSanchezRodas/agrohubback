@@ -216,26 +216,23 @@ curl -X POST "http://localhost:8000/api/telemetria" \
 
 ```text
 AgroHubBack/
-├── app/
-│   ├── core/                  # Configuracion global, Firebase, Supabase y seguridad JWT
-│   │   ├── config.py
-│   │   ├── firebase.py
-│   │   ├── security.py
-│   │   └── supabase_client.py
-│   ├── routers/               # Rutas y controladores de FastAPI
-│   │   ├── control.py
-│   │   └── telemetria.py
-│   ├── schemas/               # Modelos Pydantic (DTOs)
-│   │   ├── actuador.py
-│   │   └── telemetria.py
-│   └── services/              # Logica de negocio y persistencia desacoplada
-│       ├── actuador_service.py
-│       └── telemetria_service.py
+├── main.py                    # Punto de entrada y configuracion CORS
+├── core/
+│   ├── security.py            # Logica de encriptacion y JWT
+│   └── config.py              # Carga de variables .env
+├── schemas/
+│   └── telemetria.py          # Modelos Pydantic (Validacion de datos)
+├── api/
+│   ├── rutas_auth.py          # Endpoints de Login (/api/auth)
+│   ├── rutas_sensores.py      # Endpoints para el ESP32 (/api/telemetria y /api/historial)
+│   └── rutas_control.py       # Endpoints de actuadores (/api/control)
+├── db/
+│   ├── supabase_client.py     # Conexion SQL
+│   └── firebase_client.py     # Conexion Tiempo Real
 ├── .env.example               # Plantilla de variables de entorno
 ├── .gitignore                 # Exclusion de archivos sensibles y entornos
 ├── firebase-credentials.json  # Credenciales de servicio Firebase (ignorado en git)
 ├── GEMINI.md                  # Reglas de desarrollo y directrices de ingenieria
-├── main.py                    # Punto de entrada e inicializacion de FastAPI
 ├── README.md                  # Documentacion del proyecto
 └── requirements.txt           # Lista de dependencias del proyecto
 ```
