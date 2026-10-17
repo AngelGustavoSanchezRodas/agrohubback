@@ -1,25 +1,11 @@
 # AgroHub — Guía de exposición
 
-Guía para presentar la arquitectura y el recorrido de la telemetría. El circuito ESP32 todavía no transmite. El flujo de software ya está definido en la API, en las dos bases de datos y en el dashboard.
+Arquitectura y el recorrido de la telemetría. El circuito ESP32 todavía no transmite. El flujo de software ya está definido en la API, en las dos bases de datos y en el dashboard.
 
 Sitio de la demo: https://agrohubfront.vercel.app
 
----
-
-## Cómo usar esta guía
-
-Cada bloque tiene dos partes:
-
-- **Mostrar:** el diagrama o el ejemplo que se proyecta.
-- **Decir:** el texto para explicar ese diagrama.
-
-Orden sugerido: apertura, arquitectura, sensor hacia backend, backend hacia frontend, cierre. Unos seis a ocho minutos.
-
----
 
 ## Apertura
-
-**Decir:**
 
 El invernadero mide temperatura, humedad del aire y humedad del suelo. Esas lecturas viajan por WiFi hasta una API. La API guarda el último valor para verlo al instante y la serie completa para ver la tendencia. El operador no consulta al ESP32: consulta el panel.
 
@@ -27,7 +13,6 @@ El invernadero mide temperatura, humedad del aire y humedad del suelo. Esas lect
 
 ## 1. Arquitectura
 
-**Mostrar:**
 
 ```mermaid
 flowchart LR
@@ -56,22 +41,11 @@ flowchart LR
   HIST -->|"GET /api/historial"| API
 ```
 
-**Decir, de izquierda a derecha:**
-
 - El ESP32 es el nodo de campo. Cuando el circuito esté armado, enviará un JSON por la red del invernadero.
 - FastAPI es el único punto que recibe esa telemetría, la valida y decide dónde guardarla.
 - Firebase guarda la fotografía actual. Sirve para el panel en vivo.
 - PostgreSQL, en Supabase, guarda cada lectura. Sirve para la gráfica y la tabla histórica.
 - El dashboard tiene dos caminos distintos. El panel escucha Firebase. La analítica le pide el historial a la API.
-
-Esta estructura es la definitiva del proyecto. Cubre las cuatro capas del enunciado: captura, servicio web, base híbrida y visualización.
-
-| Capa del enunciado | Pieza de AgroHub |
-| --- | --- |
-| Captura IoT | ESP32, por WiFi, con contrato HTTP |
-| Servicios web | FastAPI |
-| Base de datos híbrida | Firebase para el estado vivo y Supabase para el histórico |
-| Visualización | Dashboard Next.js |
 
 ---
 
@@ -104,7 +78,6 @@ sequenceDiagram
 }
 ```
 
-**Decir en cada flecha:**
 
 - La ruta es `POST /api/telemetria/ingesta`. La misma entrada también existe en `POST /api/telemetria`.
 - La temperatura se acepta entre −10 °C y 80 °C. Las dos humedades, entre 0 % y 100 %. Si un valor sale de ese rango, la API lo rechaza y no lo guarda.
@@ -123,7 +96,6 @@ sequenceDiagram
 
 ## 3. Del backend al frontend
 
-**Mostrar:**
 
 ```mermaid
 sequenceDiagram
@@ -141,7 +113,6 @@ sequenceDiagram
   API-->>HIST: datos para grafica y tabla
 ```
 
-**Decir:**
 
 - El panel no le pregunta a la API cada segundo. Se suscribe a Firebase. Cuando entra una lectura nueva, la tarjeta cambia sola.
 - La ruta que escucha el panel es `invernadero/{id_dispositivo}/estado_actual`.
@@ -153,13 +124,10 @@ sequenceDiagram
 
 ## Cierre
 
-**Decir:**
 
 La plataforma ya tiene los tres tramos del dato: recepción, persistencia doble y visualización. El siguiente paso es que el ESP32 ocupe ese mismo contrato. A partir de ahí, el panel dejará de estar en espera y la analítica graficará la serie guardada en PostgreSQL.
 
 ---
-
-## Si preguntan
 
 **¿Por qué dos bases?**
 
