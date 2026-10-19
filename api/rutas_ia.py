@@ -9,7 +9,7 @@ from db.supabase_client import supabase, asegurar_dispositivo_registrado
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/ia", tags=["Inteligencia Agricola"])
+router = APIRouter(prefix="/api/ia", tags=["Inteligencia Agrícola"])
 
 @router.get("/diagnostico/{id_dispositivo}")
 def solicitar_analisis_ia(id_dispositivo: str, cultivo: str = "Tomate") -> dict[str, Any]:
@@ -23,7 +23,7 @@ def solicitar_analisis_ia(id_dispositivo: str, cultivo: str = "Tomate") -> dict[
     if not historial:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dispositivo sin datos de telemetria registrados.",
+            detail=f"El dispositivo '{id_dispositivo}' no cuenta con lecturas de telemetria en la base de datos.",
         )
 
     resumen_historico = formatear_datos_para_ia(historial)
