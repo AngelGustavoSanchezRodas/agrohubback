@@ -6,10 +6,9 @@ uvicorn[standard]>=0.28.0
 firebase-admin>=6.5.0
 supabase>=2.4.0
 
-# Seguridad y Autenticacion
-pyjwt>=2.8.0
-cryptography>=42.0.0
-
 # Configuracion y Validacion de Datos
 python-dotenv>=1.0.0
 pydantic>=2.6.0
+
+# Inteligencia Artificial y Diagnostico Agronomico
+google-generativeai>=0.8.0

@@ -1,31 +1,39 @@
-# AgroHub Backend - API AgroIoT (Invernaderos)
+# AgroHub Data Engine - API AgroIoT e Inteligencia Agricola
 
-Backend modular desarrollado con **FastAPI** para la ingesta, procesamiento, persistencia dual y control de actuadores para invernaderos inteligentes.
+Motor central de datos desarrollado con **FastAPI** para la ingesta robusta de telemetria IoT (microcontroladores ESP32), persistencia dual coordinada, preparacion analitica de series temporales y diagnostico agronomico asistido por inteligencia artificial con Google Gemini.
 
-El sistema implementa una persistencia dual:
-- **Firebase Realtime Database:** Almacenamiento del estado actual en tiempo real para sincronizacion instantanea con el frontend Next.js.
-- **Supabase (PostgreSQL):** Almacenamiento historico de lecturas para auditoria, analitica temporal y graficas de tendencias.
+El sistema opera bajo un flujo de datos limpio y desacoplado: el hardware opera de manera independiente y autonoma en campo, mientras que el backend y el dashboard de Next.js funcionan en modalidad analitica y de solo lectura.
+
+---
+
+## Modelo Hibrido de Diagnostico con IA
+
+El analisis fitosanitario opera de manera dual:
+1. **Bajo Demanda:** A traves del endpoint `GET /api/ia/diagnostico/{id_dispositivo}`, invocado cuando el operador presiona el boton de analisis en el dashboard.
+2. **Programado en Segundo Plano:** Una tarea asincrona (`core/ia_scheduler.py`) gestionada por el ciclo de vida de FastAPI ejecuta un barrido automatico periodico cada N minutos (por defecto 240 minutos = 4 horas), auditando todos los dispositivos registrados sin bloquear peticiones web ni saturar la cuota de Gemini.
+
+---
+
+## Persistencia Dual
+
+- **Firebase Realtime Database:** Estado inmediato y telemetria en tiempo real para sincronizacion instantanea con el frontend.
+- **Supabase (PostgreSQL):** Almacenamiento historico relacional de lecturas (`public.telemetria_historica`), catalogo de nodos (`public.dispositivos`) y auditoria de anomalias fitosanitarias (`public.alertas_agronomicas`).
 
 ---
 
 ## Requisitos Previos
 
-Asegurate de contar con las siguientes herramientas instaladas en tu equipo:
-
 - **Python 3.10+** (Recomendado Python 3.12 o superior)
 - **Git**
-- **Cuenta y proyecto en Firebase** (con servicio de Realtime Database habilitado)
+- **Cuenta y proyecto en Firebase** (con Realtime Database habilitado)
 - **Cuenta y proyecto en Supabase** (con base de datos PostgreSQL)
+- **Clave API de Google AI Studio** (para el servicio Gemini)
 
 ---
 
 ## Instalacion y Puesta en Marcha
 
-Sigue estos pasos en orden para clonar el repositorio, configurar el entorno local e iniciar el servidor.
-
 ### 1. Clonar el Repositorio
-
-Abre una terminal y clona el repositorio del backend:
 
 ```bash
 git clone https://github.com/AngelGustavoSanchezRodas/agrohubback.git
@@ -36,31 +44,15 @@ cd agrohubback
 
 ### 2. Crear y Activar un Entorno Virtual
 
-Es indispensable utilizar un entorno virtual para aislar las dependencias del proyecto y evitar conflictos con la instalacion global de Python.
-
 #### En Windows:
 ```powershell
-# Crear el entorno virtual
 python -m venv .venv
-
-# Activar el entorno en PowerShell
 .\.venv\Scripts\Activate.ps1
-
-# O si utilizas CMD (Simbolo del sistema):
-.\.venv\Scripts\activate.bat
 ```
-
-> **Nota para PowerShell:** Si la ejecucion de scripts esta deshabilitada en tu sistema, ejecuta una vez en PowerShell con permisos de administrador:
-> ```powershell
-> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-> ```
 
 #### En Linux / macOS:
 ```bash
-# Crear el entorno virtual
 python3 -m venv .venv
-
-# Activar el entorno
 source .venv/bin/activate
 ```
 
@@ -68,40 +60,16 @@ source .venv/bin/activate
 
 ### 3. Instalar Dependencias
 
-Con el entorno virtual activado, actualiza `pip` e instala las dependencias del proyecto:
-
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Las dependencias principales instaladas son:
-- `fastapi`: Framework web asincrono de alto rendimiento.
-- `uvicorn`: Servidor ASGI para ejecucion y recarga en caliente de FastAPI.
-- `firebase-admin`: SDK oficial para conectar y escribir en Firebase Realtime Database.
-- `supabase`: Cliente oficial para interactuar con la base de datos PostgreSQL en Supabase.
-- `python-dotenv`: Carga de variables de entorno desde el archivo `.env`.
-- `pyjwt`: Generacion y validacion de tokens de seguridad JWT.
-
 ---
 
-### 4. Configurar Variables de Entorno y Credenciales
+### 4. Configurar Variables de Entorno (`.env`)
 
-El proyecto requiere claves y credenciales de acceso para conectarse a Firebase y Supabase.
-
-#### A. Archivo de Variables de Entorno (`.env`)
-Crea una copia del archivo `.env.example` y nombrala `.env`:
-
-- **Windows:**
-  ```powershell
-  copy .env.example .env
-  ```
-- **Linux / macOS:**
-  ```bash
-  cp .env.example .env
-  ```
-
-Edita el archivo `.env` generado con tus credenciales:
+Crea un archivo `.env` a partir de `.env.example`:
 
 ```ini
 # Configuracion de Firebase
@@ -110,59 +78,63 @@ FIREBASE_URL=https://<tu-proyecto>-default-rtdb.firebaseio.com/
 
 # Configuracion de Supabase
 SUPABASE_URL=https://<tu-id-proyecto>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=tu_supabase_service_role_secret_key
-SUPABASE_KEY=tu_supabase_service_role_secret_key
-
-# Configuracion de Seguridad JWT
-JWT_SECRET=tu_clave_secreta_jwt_aqui
-
-# Configuracion de API Key (Control de Actuadores)
-API_KEY_SECRETA=clave_estatica_agrohub_123
+SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key_aqui
+SUPABASE_KEY=tu_service_role_key_aqui
 
 # Dominio del Frontend para CORS
 FRONTEND_URL=agrohubfront.vercel.app
+
+# Inteligencia Artificial (Google Gemini)
+GEMINI_API_KEY=tu_gemini_api_key_aqui
+
+# Programador Hibrido de IA
+IA_SCHEDULER_HABILITADO=true
+IA_SCHEDULER_INTERVALO_MINUTOS=240
 ```
 
-#### B. Credenciales de Firebase (`firebase-credentials.json`)
-1. Ve a la consola de Firebase: **Configuracion del proyecto** > **Cuentas de servicio**.
-2. Haz clic en **Generar nueva clave privada**.
-3. Descarga el archivo JSON y colocalo en la raiz del proyecto con el nombre:
-   ```
-   firebase-credentials.json
-   ```
-
-> **Importante:** Por seguridad, tanto el archivo `.env` como `firebase-credentials.json` estan incluidos en `.gitignore` y **nunca** deben subirse al repositorio.
+Coloca tu archivo de credenciales `firebase-credentials.json` en la raiz del proyecto.
 
 ---
 
 ### 5. Estructura de la Base de Datos (Supabase SQL)
 
-En el panel de Supabase, accede a **SQL Editor** y ejecuta el siguiente script para inicializar las tablas necesarias con sus relaciones e integridad referencial:
+En el SQL Editor de Supabase, ejecuta:
 
 ```sql
--- 1. Tabla de Dispositivos (requerida por clave foranea)
-create table if not exists dispositivos (
-    id_dispositivo text primary key,
-    nombre text,
-    ubicacion text,
-    creado_en timestamp with time zone default timezone('utc'::text, now()) not null
+CREATE TABLE public.dispositivos (
+  id_dispositivo character varying NOT NULL,
+  nombre character varying NOT NULL,
+  ubicacion character varying,
+  fecha_instalacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  estado_conexion character varying DEFAULT 'INACTIVO'::character varying,
+  CONSTRAINT dispositivos_pkey PRIMARY KEY (id_dispositivo)
 );
 
--- Registrar un dispositivo inicial para pruebas de telemetria
-insert into dispositivos (id_dispositivo, nombre, ubicacion)
-values ('invernadero_01', 'Invernadero Principal', 'Sector Norte')
-on conflict (id_dispositivo) do nothing;
+CREATE TABLE public.telemetria_historica (
+  id bigint NOT NULL DEFAULT nextval('telemetria_historica_id_seq'::regclass),
+  id_dispositivo character varying,
+  temperatura numeric NOT NULL,
+  humedad_ambiente numeric NOT NULL,
+  humedad_suelo numeric NOT NULL,
+  luz_uv numeric DEFAULT 0.0,
+  indice_calor numeric,
+  voltaje_bateria numeric,
+  creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT telemetria_historica_pkey PRIMARY KEY (id),
+  CONSTRAINT telemetria_historica_id_dispositivo_fkey FOREIGN KEY (id_dispositivo) REFERENCES public.dispositivos(id_dispositivo)
+);
 
--- 2. Tabla de Telemetria Historica
-create table if not exists telemetria_historica (
-    id bigint generated by default as identity primary key,
-    creado_en timestamp with time zone default timezone('utc'::text, now()) not null,
-    id_dispositivo text not null references dispositivos(id_dispositivo) on delete cascade,
-    temperatura double precision,
-    humedad_ambiente double precision,
-    humedad_suelo double precision,
-    radiacion_solar integer,
-    luz_uv integer
+CREATE TABLE public.alertas_agronomicas (
+  id bigint NOT NULL DEFAULT nextval('alertas_agronomicas_id_seq'::regclass),
+  id_dispositivo character varying,
+  tipo_riesgo character varying NOT NULL,
+  severidad character varying NOT NULL,
+  mensaje_diagnostico text NOT NULL,
+  estado character varying DEFAULT 'ACTIVA'::character varying,
+  creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  resuelta_en timestamp with time zone,
+  CONSTRAINT alertas_agronomicas_pkey PRIMARY KEY (id),
+  CONSTRAINT alertas_agronomicas_id_dispositivo_fkey FOREIGN KEY (id_dispositivo) REFERENCES public.dispositivos(id_dispositivo)
 );
 ```
 
@@ -170,137 +142,45 @@ create table if not exists telemetria_historica (
 
 ### 6. Ejecutar la Aplicacion
 
-Con el entorno virtual activado, inicia el servidor de desarrollo utilizando `uvicorn`:
-
 ```bash
 uvicorn main:app --reload
 ```
 
-O ejecutando directamente a traves del interprete del entorno virtual:
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload
-```
-
-Para permitir conexiones desde dispositivos en la misma red local (por ejemplo, el microcontrolador ESP32 o dispositivos moviles):
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
 - **API Base:** `http://localhost:8000`
 - **Documentacion Interactiva (Swagger UI):** `http://localhost:8000/docs`
-- **Documentacion Alternativa (Redoc):** `http://localhost:8000/redoc`
 
 ---
 
 ## Endpoints de la API
 
-### 1. Ingesta de Telemetria ESP32
-Endpoint exclusivo para el microcontrolador. Actualiza el estado en tiempo real en Firebase y persiste en Supabase.
-
+### 1. Ingesta de Telemetria (Hardware ESP32)
 - **Metodo:** `POST`
 - **Ruta:** `/api/telemetria/ingesta`
-- **Cabeceras:** `Content-Type: application/json`
+- **Cuerpo (JSON):**
+  ```json
+  {
+    "id_dispositivo": "invernadero_01",
+    "temperatura": 24.5,
+    "humedad_ambiente": 65.0,
+    "humedad_suelo": 45.2,
+    "luz_uv": 2.1,
+    "voltaje_bateria": 3.95
+  }
+  ```
 
-#### Cuerpo de la peticion (JSON):
-```json
-{
-  "id_dispositivo": "invernadero_01",
-  "temperatura": 24.5,
-  "humedad_ambiente": 65.0,
-  "humedad_suelo": 45.2
-}
-```
+### 2. Consulta de Historial (Frontend Next.js / Recharts)
+- **Historial por dispositivo:** `GET /api/telemetria/historial/{id_dispositivo}?limite=50`
+- **Historial general:** `GET /api/telemetria/historial?limite=50`
 
-#### Respuesta exitosa (`200 OK`):
-```json
-{
-  "status": "ok",
-  "mensaje": "Telemetria almacenada exitosamente"
-}
-```
+### 3. Diagnostico Agronomico Inteligente (Gemini IA)
+- **Diagnostico bajo demanda:** `GET /api/ia/diagnostico/{id_dispositivo}?cultivo=Tomate`
+- **Barrido manual de todos los nodos:** `POST /api/ia/barrido`
+- **Estado del programador automatico:** `GET /api/ia/programador/estado`
 
-#### Ejemplo con cURL:
-```bash
-curl -X POST "http://localhost:8000/api/telemetria/ingesta" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "id_dispositivo": "invernadero_01",
-       "temperatura": 24.5,
-       "humedad_ambiente": 65.0,
-       "humedad_suelo": 45.2
-     }'
-```
-
----
-
-### 2. Consulta de Historial por Dispositivo
-Endpoint para el frontend para alimentar graficas y tablas de analitica temporal.
-
-- **Metodo:** `GET`
-- **Ruta:** `/api/telemetria/historial/{id_dispositivo}?limite=50`
-
-#### Respuesta exitosa (`200 OK`):
-```json
-{
-  "dispositivo": "invernadero_01",
-  "total_registros": 1,
-  "datos": [
-    {
-      "id": 1,
-      "id_dispositivo": "invernadero_01",
-      "temperatura": 24.5,
-      "humedad_ambiente": 65.0,
-      "humedad_suelo": 45.2,
-      "creado_en": "2026-10-14T15:00:00Z"
-    }
-  ]
-}
-```
-
----
-
-### 3. Control de Actuadores (Bomba de Agua)
-Endpoint protegido para emitir comandos de encendido/apagado al hardware.
-
-- **Metodo:** `POST`
-- **Ruta:** `/api/control/bomba`
-- **Cabeceras:**
-  - `Content-Type: application/json`
-  - `X-API-Key: clave_estatica_agrohub_123`
-
-#### Cuerpo de la peticion (JSON):
-```json
-{
-  "estado": true
-}
-```
-
-#### Respuesta exitosa (`200 OK`):
-```json
-{
-  "mensaje": "Orden ejecutada en el ESP32",
-  "estado": true
-}
-```
-
----
-
-### 4. Autenticacion de Operadores
-Endpoint para generacion de tokens de sesion JWT.
-
-- **Metodo:** `POST`
-- **Ruta:** `/api/auth/login`
-- **Cabeceras:** `Content-Type: application/json`
-
-#### Cuerpo de la peticion (JSON):
-```json
-{
-  "usuario": "operador_01",
-  "password": "tu_password_aqui"
-}
-```
+### 4. Alertas y Catalogo de Dispositivos
+- **Listar alertas:** `GET /api/alertas?estado=ACTIVA`
+- **Alertas activas por dispositivo:** `GET /api/alertas/activas/{id_dispositivo}`
+- **Listar dispositivos:** `GET /api/dispositivos`
 
 ---
 
@@ -308,23 +188,39 @@ Endpoint para generacion de tokens de sesion JWT.
 
 ```text
 AgroHubBack/
-├── main.py                    # Punto de entrada FastAPI y configuracion CORS
+├── main.py                    # Punto de entrada FastAPI, ciclo de vida lifespan y CORS
 ├── core/
-│   ├── security.py            # Logica de seguridad (API Key y tokens JWT)
-│   └── config.py              # Validacion y carga centralizada de variables .env
+│   ├── config.py              # Validacion y carga de variables .env
+│   ├── data_service.py        # Capa de servicio de datos y pre-procesamiento estadistico
+│   ├── ia_service.py          # Cliente de integracion con Google Gemini 1.5 Flash
+│   └── ia_scheduler.py        # Tarea programada en segundo plano para barrido periodico
 ├── schemas/
-│   └── telemetria.py          # Modelos de datos Pydantic y validacion de rangos
+│   ├── __init__.py            # Exportacion centralizada de modelos Pydantic
+│   ├── telemetria.py          # Esquemas de telemetria e ingesta ESP32
+│   ├── dispositivos.py        # Esquemas para public.dispositivos
+│   └── alertas.py             # Esquemas para public.alertas_agronomicas
 ├── api/
-│   ├── rutas_auth.py          # Endpoints de autenticacion (/api/auth)
-│   ├── rutas_sensores.py      # Endpoints de telemetria e historial (/api/telemetria)
-│   └── rutas_control.py       # Endpoints de control de actuadores (/api/control)
+│   ├── __init__.py            # Modulos de enrutamiento
+│   ├── rutas_sensores.py      # Endpoints de ingesta y lectura de telemetria
+│   ├── rutas_ia.py            # Endpoints de diagnostico agronomico con IA
+│   ├── rutas_alertas.py       # Consulta y resolucion de alertas agronomicas
+│   └── rutas_dispositivos.py  # Catalogo de dispositivos IoT
 ├── db/
-│   ├── supabase_client.py     # Cliente de conexion a PostgreSQL en Supabase
-│   └── firebase_client.py     # Cliente de conexion a Firebase Realtime Database
-├── .env.example               # Plantilla de variables de entorno comentada
-├── .gitignore                 # Exclusion de archivos sensibles y entornos
-├── firebase-credentials.json  # Credenciales de servicio Firebase (ignorado en git)
-├── GEMINI.md                  # Reglas de desarrollo y directrices de ingenieria
-├── README.md                  # Guia de instalacion y documentacion tecnica
-└── requirements.txt           # Dependencias del proyecto Python
+│   ├── supabase_client.py     # Cliente de base de datos Supabase
+│   └── firebase_client.py     # Cliente Firebase Realtime Database
+├── tests/
+│   └── test_esquemas_y_logica.py # Suite de pruebas unitarias automatizadas
+├── .env.example               # Plantilla de configuracion comentada
+├── .gitignore                 # Exclusion de archivos sensibles
+├── GEMINI.md                  # Reglas de desarrollo e ingenieria
+├── README.md                  # Documentacion tecnica de la arquitectura
+└── requirements.txt           # Dependencias de produccion
+```
+
+---
+
+## Pruebas Automatizadas
+
+```bash
+python -m unittest discover tests
 ```
