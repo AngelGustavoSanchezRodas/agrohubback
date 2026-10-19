@@ -131,5 +131,27 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertNotIn("/api/control/actuador", rutas)
         self.assertNotIn("/api/control/historial", rutas)
 
+    def test_diagnostico_agronomico_esquema(self) -> None:
+        """Verifica la validacion del esquema DiagnosticoAgronomico usando Pydantic."""
+        from core.ia_service import DiagnosticoAgronomico
+        diagnostico = DiagnosticoAgronomico(
+            estado_general="OPTIMO",
+            riesgo_detectado="NINGUNO",
+            recomendacion_tecnica="Mantener el riego programado.",
+        )
+        self.assertEqual(diagnostico.estado_general, "OPTIMO")
+        self.assertEqual(diagnostico.riesgo_detectado, "NINGUNO")
+        self.assertEqual(diagnostico.recomendacion_tecnica, "Mantener el riego programado.")
+
+    def test_analisis_ia_estructura_respuesta(self) -> None:
+        """Verifica que el servicio de IA retorne un diccionario con el contrato estructurado esperado."""
+        from core.ia_service import analizar_condiciones_agricolas
+        resumen = "Temperatura Ambiente: Promedio 24.5 C. Humedad: 60%."
+        resultado = analizar_condiciones_agricolas(resumen, cultivo="Tomate")
+        self.assertIsInstance(resultado, dict)
+        self.assertIn("estado_general", resultado)
+        self.assertIn("riesgo_detectado", resultado)
+        self.assertIn("recomendacion_tecnica", resultado)
+
 if __name__ == "__main__":
     unittest.main()

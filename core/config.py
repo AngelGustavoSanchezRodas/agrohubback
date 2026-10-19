@@ -11,7 +11,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 # Clave service_role secreta para acceso backend
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite").strip()
 
 if not all([FIREBASE_URL, SUPABASE_URL, SUPABASE_KEY]):
     raise ValueError("Faltan variables de entorno criticas para las bases de datos.")
@@ -24,11 +25,12 @@ class Settings:
     SUPABASE_URL: str = SUPABASE_URL
     SUPABASE_KEY: str = SUPABASE_KEY
     GEMINI_API_KEY: str = GEMINI_API_KEY
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "agrohubfront.vercel.app")
+    GEMINI_MODEL: str = GEMINI_MODEL
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "agrohubfront.vercel.app").strip()
     
     # Seguridad de comunicacion con el frontend
     API_KEY_NOMBRE: str = "X-API-Key"
-    API_KEY_SECRETA: str = os.getenv("API_KEY_SECRETA", "clave_estatica_agrohub_123")
+    API_KEY_SECRETA: str = os.getenv("API_KEY_SECRETA", "clave_estatica_agrohub_123").strip()
     
     # Configuracion del programador hibrido de IA
     IA_SCHEDULER_HABILITADO: bool = os.getenv("IA_SCHEDULER_HABILITADO", "true").lower() in ("true", "1", "yes")

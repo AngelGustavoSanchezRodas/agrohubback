@@ -16,7 +16,7 @@ def solicitar_analisis_ia(id_dispositivo: str, cultivo: str = "Tomate") -> dict[
     """
     Endpoint bajo demanda (Boton en el Frontend).
     Recupera las ultimas 20 lecturas de Supabase, calcula metricas consolidadas,
-    solicita un diagnostico agronomico a Gemini 1.5 Flash y persiste alertas si aplica.
+    solicita un diagnostico agronomico a Google Gemini y persiste alertas si aplica.
     """
     historial = obtener_historial_reciente(id_dispositivo, limite=20)
 

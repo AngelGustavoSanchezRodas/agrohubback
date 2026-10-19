@@ -192,7 +192,7 @@ AgroHubBack/
 ├── core/
 │   ├── config.py              # Validacion y carga de variables .env
 │   ├── data_service.py        # Capa de servicio de datos y pre-procesamiento estadistico
-│   ├── ia_service.py          # Cliente de integracion con Google Gemini 1.5 Flash
+│   ├── ia_service.py          # Cliente de integracion con Google Gemini (SDK google-genai)
 │   └── ia_scheduler.py        # Tarea programada en segundo plano para barrido periodico
 ├── schemas/
 │   ├── __init__.py            # Exportacion centralizada de modelos Pydantic

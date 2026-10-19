@@ -1,12 +1,16 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from typing import Any
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from core.config import settings
 from core.ia_scheduler import ciclo_programado_ia
 from api import rutas_sensores, rutas_ia, rutas_alertas, rutas_dispositivos
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +37,30 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configuracion del esquema de seguridad OpenAPI para Swagger (/docs)
+def custom_openapi() -> dict[str, Any]:
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=settings.PROJECT_NAME,
+        version="2.1.0",
+        description="Motor central para procesamiento IoT, persistencia dual e Inteligencia Agricola hibrida.",
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": settings.API_KEY_NOMBRE,
+            "description": f"Cabecera requerida para comunicacion autorizada con el backend. Ingrese el valor de '{settings.API_KEY_NOMBRE}'.",
+        }
+    }
+    openapi_schema["security"] = [{"ApiKeyAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,6 +68,33 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
+
+# Manejador global estructurado para excepciones HTTP
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "codigo": exc.status_code,
+            "detail": exc.detail,
+            "ruta": request.url.path,
+        },
+    )
+
+# Manejador global para excepciones no controladas del servidor
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error("Error no controlado en %s: %s", request.url.path, str(exc), exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "status": "error",
+            "codigo": status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "detail": "Error interno del servidor. La excepcion ha sido registrada para auditoria.",
+            "ruta": request.url.path,
+        },
+    )
 
 # Middleware de seguridad: comunicacion segura entre back y front mediante API_KEY
 @app.middleware("http")
@@ -61,11 +116,19 @@ async def verificar_api_key_middleware(request: Request, call_next):
         return await call_next(request)
 
     # Validar API_KEY en la comunicacion con el frontend
-    clave = request.headers.get(settings.API_KEY_NOMBRE)
-    if clave != settings.API_KEY_SECRETA:
+    clave_recibida = (request.headers.get(settings.API_KEY_NOMBRE) or "").strip()
+    clave_esperada = settings.API_KEY_SECRETA.strip()
+
+    if clave_recibida != clave_esperada:
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
-            content={"detail": "Acceso denegado: API Key no autorizada"},
+            content={
+                "status": "error",
+                "codigo": status.HTTP_403_FORBIDDEN,
+                "detail": f"Acceso denegado: Se requiere una cabecera '{settings.API_KEY_NOMBRE}' valida para acceder a este recurso.",
+                "ayuda": "Incluya la cabecera 'X-API-Key' en su solicitud HTTP o autoricese en Swagger (/docs).",
+                "ruta": request.url.path,
+            },
         )
 
     return await call_next(request)
