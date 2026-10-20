@@ -9,6 +9,7 @@ supabase>=2.4.0
 # Configuracion y Validacion de Datos
 python-dotenv>=1.0.0
 pydantic>=2.6.0
+tzdata>=2024.1
 
 # Inteligencia Artificial y Diagnostico Agronomico
 google-genai>=2.0.0

@@ -17,6 +17,11 @@ from schemas.alertas import (
     AlertaAgronomicaActualizar,
     AlertaAgronomicaRespuesta,
 )
+from schemas.actuadores import (
+    RegistroActuadorBase,
+    RegistroActuadorCrear,
+    RegistroActuadorRespuesta,
+)
 
 __all__ = [
     "PayloadESP32",
@@ -30,4 +35,7 @@ __all__ = [
     "AlertaAgronomicaCrear",
     "AlertaAgronomicaActualizar",
     "AlertaAgronomicaRespuesta",
+    "RegistroActuadorBase",
+    "RegistroActuadorCrear",
+    "RegistroActuadorRespuesta",
 ]

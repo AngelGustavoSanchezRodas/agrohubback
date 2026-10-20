@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import asyncio
 import logging
 import math
@@ -12,6 +13,7 @@ from schemas.telemetria import PayloadESP32
 logger = logging.getLogger(__name__)
 
 _ultima_marca_por_dispositivo: dict[str, str] = {}
+_ultimo_estado_bomba: dict[str, bool] = {}
 
 
 def numero_finito(valor: Any) -> float | None:
@@ -36,30 +38,39 @@ def lectura_desde_estado(id_dispositivo: str, estado: dict[str, Any]) -> Payload
     if temperatura is None or humedad_ambiente is None or humedad_suelo is None:
         return None
 
-    luz = numero_finito(estado.get("intensidad_luz_lux"))
-    if luz is None:
-        luz = 0.0
+    # Solo asignar intensidad_luz_lux si viene explícitamente en el payload del ESP32
+    luz_presente = "intensidad_luz_lux" in estado
+    luz = numero_finito(estado.get("intensidad_luz_lux")) if luz_presente else None
 
-    return PayloadESP32(
-        id_dispositivo=id_dispositivo,
-        temperatura=min(80.0, max(-10.0, temperatura)),
-        humedad_ambiente=min(100.0, max(0.0, humedad_ambiente)),
-        humedad_suelo=min(100.0, max(0.0, humedad_suelo)),
-        intensidad_luz_lux=min(100000.0, max(0.0, luz)),
-        estado_bomba=bool(estado.get("estado_bomba")),
-    )
+    voltaje = numero_finito(estado.get("voltaje_bateria"))
+    luz_uv = numero_finito(estado.get("luz_uv")) or 0.0
+
+    kwargs: dict[str, Any] = {
+        "id_dispositivo": id_dispositivo,
+        "temperatura": min(80.0, max(-10.0, temperatura)),
+        "humedad_ambiente": min(100.0, max(0.0, humedad_ambiente)),
+        "humedad_suelo": min(100.0, max(0.0, humedad_suelo)),
+        "luz_uv": max(0.0, luz_uv),
+        "estado_bomba": bool(estado.get("estado_bomba")),
+        "voltaje_bateria": min(24.0, max(0.0, voltaje)) if voltaje is not None else None,
+    }
+    if luz is not None:
+        kwargs["intensidad_luz_lux"] = min(100000.0, max(0.0, luz))
+
+    return PayloadESP32(**kwargs)
 
 
 def copiar_estados_a_historial() -> int:
     """
     Lee el arbol en vivo de Firebase y guarda en Supabase solo las lecturas nuevas.
-    El Heltec ya pisa estado_actual; esta copia es la que alimenta graficas y alertas.
+    El Heltec escribe estado_actual; esta copia alimenta graficas, alertas y actuadores.
     """
     arbol = firebase_db.reference("invernadero").get()
     if not isinstance(arbol, dict):
         return 0
 
     guardados = 0
+
     for id_dispositivo, nodo in arbol.items():
         if not isinstance(nodo, dict):
             continue
@@ -70,15 +81,17 @@ def copiar_estados_a_historial() -> int:
         if not isinstance(estado, dict):
             continue
 
-        marca = str(estado.get("timestamp") or "")
-        if marca and _ultima_marca_por_dispositivo.get(id_str) == marca:
-            continue
-
         payload = lectura_desde_estado(id_str, estado)
         if payload is None:
             logger.warning("Lectura invalida omitida para %s", id_str)
-            if marca:
-                _ultima_marca_por_dispositivo[id_str] = marca
+            continue
+
+        # Manejo de marca de tiempo o huella para deduplicacion
+        marca = str(estado.get("timestamp") or "")
+        if not marca:
+            marca = f"{payload.temperatura:.1f}_{payload.humedad_ambiente:.1f}_{payload.humedad_suelo:.1f}_{payload.estado_bomba}"
+
+        if _ultima_marca_por_dispositivo.get(id_str) == marca:
             continue
 
         indice_calor = calcular_indice_calor(payload.temperatura, payload.humedad_ambiente)
@@ -95,8 +108,27 @@ def copiar_estados_a_historial() -> int:
             "voltaje_bateria": payload.voltaje_bateria,
         }).execute()
         evaluar_alertas_automaticas(payload, indice_calor)
-        if marca:
-            _ultima_marca_por_dispositivo[id_str] = marca
+
+        # Registrar cambios de estado en el actuador de la bomba
+        estado_previo_bomba = _ultimo_estado_bomba.get(id_str)
+        if estado_previo_bomba is not None and estado_previo_bomba != payload.estado_bomba:
+            try:
+                supabase.table("registro_actuadores").insert({
+                    "id_dispositivo": payload.id_dispositivo,
+                    "actuador": "BOMBA",
+                    "accion": "ENCENDIDO" if payload.estado_bomba else "APAGADO",
+                    "origen": "ESP32_AUTOMATICO",
+                }).execute()
+                logger.info(
+                    "Cambio de estado de actuador registrado para %s: BOMBA -> %s",
+                    payload.id_dispositivo,
+                    "ENCENDIDO" if payload.estado_bomba else "APAGADO",
+                )
+            except Exception as act_err:
+                logger.warning("No se pudo registrar actuador en Supabase: %s", str(act_err))
+        _ultimo_estado_bomba[id_str] = payload.estado_bomba
+
+        _ultima_marca_por_dispositivo[id_str] = marca
         guardados += 1
         logger.info(
             "Historial actualizado para %s: suelo %.1f %%, bomba %s",

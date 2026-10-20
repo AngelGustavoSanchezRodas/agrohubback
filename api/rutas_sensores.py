@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import logging
 from typing import Any
@@ -17,7 +17,10 @@ router = APIRouter(prefix="/api/telemetria", tags=["Sensores"])
 UMBRAL_HUMEDAD_SUELO_ENCENDIDO = 55.6
 UMBRAL_HUMEDAD_SUELO_APAGADO = 55.6
 UMBRAL_LUZ_BAJA_LUX = 1000.0
-ZONA_INVERNADERO = ZoneInfo("America/Guatemala")
+try:
+    ZONA_INVERNADERO = ZoneInfo("America/Guatemala")
+except Exception:
+    ZONA_INVERNADERO = timezone(timedelta(hours=-6))
 HORA_INICIO_DIA = 6
 HORA_FIN_DIA = 18
 
@@ -61,10 +64,22 @@ def es_horario_diurno(momento: datetime | None = None) -> bool:
 
 def resolver_alerta_activa(id_dispositivo: str, tipo_riesgo: str) -> None:
     """Cierra la alerta activa cuando la condicion que la origino ya no se cumple."""
+    timestamp_resolucion = datetime.now(timezone.utc).isoformat()
     supabase.table("alertas_agronomicas").update({
         "estado": "RESUELTA",
-        "resuelta_en": datetime.now(timezone.utc).isoformat(),
+        "resuelta_en": timestamp_resolucion,
     }).eq("id_dispositivo", id_dispositivo).eq("tipo_riesgo", tipo_riesgo).eq("estado", "ACTIVA").execute()
+
+    try:
+        ref_alerta = firebase_db.reference(f"invernadero/{id_dispositivo}/ultima_alerta")
+        alerta_fb = ref_alerta.get()
+        if isinstance(alerta_fb, dict) and alerta_fb.get("tipo_riesgo") == tipo_riesgo:
+            ref_alerta.update({
+                "estado": "RESUELTA",
+                "resuelta_en": timestamp_resolucion,
+            })
+    except Exception as err_fb:
+        logger.warning("No se pudo actualizar estado de resolucion en Firebase para %s: %s", id_dispositivo, str(err_fb))
 
 def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> None:
     """
@@ -174,6 +189,7 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
                     "tipo_riesgo": tipo_riesgo,
                     "severidad": severidad,
                     "mensaje": mensaje,
+                    "estado": "ACTIVA",
                     "timestamp": timestamp_actual,
                 })
                 logger.warning(
@@ -184,63 +200,6 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
                 )
         except Exception as err_alerta:
             logger.error("Error evaluando alerta agronomica %s: %s", tipo_riesgo, str(err_alerta))
-
-@router.post("/ingesta")
-@router.post("", include_in_schema=False)
-def recibir_datos_esp32(payload: PayloadESP32) -> dict[str, str]:
-    """
-    Endpoint exclusivo para microcontroladores ESP32 y sensores IoT en campo.
-    Valida la telemetria, asegura integridad en la tabla dispositivos,
-    actualiza el estado en vivo en Firebase y persiste en telemetria_historica de Supabase.
-    """
-    timestamp_actual = datetime.now(timezone.utc).isoformat()
-    indice_calor_final = payload.indice_calor
-    if indice_calor_final is None:
-        indice_calor_final = calcular_indice_calor(payload.temperatura, payload.humedad_ambiente)
-
-    try:
-        # 1. Asegurar registro del dispositivo para satisfacer la clave foranea
-        asegurar_dispositivo_registrado(payload.id_dispositivo)
-
-        # 2. Actualizar Firebase Realtime Database para reflejar en el frontend
-        ref = firebase_db.reference(f"invernadero/{payload.id_dispositivo}/estado_actual")
-        ref.set({
-            "temperatura": payload.temperatura,
-            "humedad_ambiente": payload.humedad_ambiente,
-            "humedad_suelo": payload.humedad_suelo,
-            "luz_uv": payload.luz_uv,
-            "intensidad_luz_lux": payload.intensidad_luz_lux,
-            "estado_bomba": payload.estado_bomba,
-            "indice_calor": indice_calor_final,
-            "voltaje_bateria": payload.voltaje_bateria,
-            "timestamp": timestamp_actual,
-        })
-
-        # 3. Guardar en Supabase (tabla telemetria_historica)
-        registro_historico = {
-            "id_dispositivo": payload.id_dispositivo,
-            "temperatura": payload.temperatura,
-            "humedad_ambiente": payload.humedad_ambiente,
-            "humedad_suelo": payload.humedad_suelo,
-            "luz_uv": payload.luz_uv,
-            "intensidad_luz_lux": payload.intensidad_luz_lux,
-            "estado_bomba": payload.estado_bomba,
-            "indice_calor": indice_calor_final,
-            "voltaje_bateria": payload.voltaje_bateria,
-        }
-        supabase.table("telemetria_historica").insert(registro_historico).execute()
-
-        # 4. Evaluacion automatica de alertas agronomicas
-        evaluar_alertas_automaticas(payload, indice_calor_final)
-
-        return {"status": "ok", "mensaje": "Telemetria almacenada exitosamente"}
-
-    except Exception as e:
-        logger.error("Error al procesar ingesta de telemetria para %s: %s", payload.id_dispositivo, str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno al persistir la telemetria en las bases de datos",
-        )
 
 @router.get("/historial/{id_dispositivo}")
 def obtener_historial_dispositivo(id_dispositivo: str, limite: int = 50) -> dict[str, Any]:

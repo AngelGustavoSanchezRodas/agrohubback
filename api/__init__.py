@@ -5,6 +5,7 @@ from api import (
     rutas_ia,
     rutas_alertas,
     rutas_dispositivos,
+    rutas_actuadores,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "rutas_ia",
     "rutas_alertas",
     "rutas_dispositivos",
+    "rutas_actuadores",
 ]

@@ -12,7 +12,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip()
 
 if not all([FIREBASE_URL, SUPABASE_URL, SUPABASE_KEY]):
     raise ValueError("Faltan variables de entorno criticas para las bases de datos.")
@@ -42,7 +42,7 @@ class Settings:
     # Nodos de prueba viejos que no deben alimentar historial ni alertas.
     DISPOSITIVOS_IGNORADOS: set[str] = {
         id.strip()
-        for id in os.getenv("DISPOSITIVOS_IGNORADOS", "invernadero_01").split(",")
+        for id in os.getenv("DISPOSITIVOS_IGNORADOS", "").split(",")
         if id.strip()
     }
 

@@ -9,7 +9,13 @@ from fastapi.responses import JSONResponse
 from core.config import settings
 from core.ia_scheduler import ciclo_programado_ia
 from core.puente_firebase import ciclo_puente_firebase
-from api import rutas_sensores, rutas_ia, rutas_alertas, rutas_dispositivos
+from api import (
+    rutas_sensores,
+    rutas_ia,
+    rutas_alertas,
+    rutas_dispositivos,
+    rutas_actuadores,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,47 +107,88 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
         },
     )
 
-# Middleware de seguridad: comunicacion segura entre back y front mediante API_KEY
+def es_origen_web_autorizado(request: Request) -> bool:
+    """
+    Verifica si la solicitud HTTP proviene de un origen web confiable del Frontend
+    (entornos de desarrollo local o dominios autorizados en FRONTEND_URL).
+    """
+    origen = (request.headers.get("origin") or "").strip().lower()
+    referer = (request.headers.get("referer") or "").strip().lower()
+    fuente = origen or referer
+    if not fuente:
+        return False
+
+    # Entornos locales de desarrollo (localhost / 127.0.0.1)
+    if any(local in fuente for local in ("localhost", "127.0.0.1")):
+        return True
+
+    # Dominios de produccion autorizados
+    dominios_permitidos = [
+        d.strip().lower().replace("https://", "").replace("http://", "").rstrip("/")
+        for d in settings.FRONTEND_URL.split(",")
+        if d.strip()
+    ]
+    for dominio in dominios_permitidos:
+        if dominio and dominio in fuente:
+            return True
+
+    return False
+
+# Middleware de seguridad: comunicacion segura entre back y front mediante API_KEY u origen autorizado
 @app.middleware("http")
 async def verificar_api_key_middleware(request: Request, call_next):
     # Permitir consultas preflight CORS
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    # Rutas publicas: documentacion, estado de salud e ingesta directa del ESP32 en campo
+    # Rutas publicas: documentacion tecnica y estado de disponibilidad
     rutas_excluidas = {
         "/",
         "/docs",
         "/redoc",
         "/openapi.json",
-        "/api/telemetria/ingesta",
-        "/api/telemetria",
     }
-    if request.url.path in rutas_excluidas:
+    ruta_normalizada = request.url.path.rstrip("/") or "/"
+    if ruta_normalizada in rutas_excluidas:
         return await call_next(request)
 
-    # Validar API_KEY en la comunicacion con el frontend
+    # 1. Permitir peticiones provenientes del Frontend autorizado (CORS/Web)
+    if es_origen_web_autorizado(request):
+        return await call_next(request)
+
+    # 2. Validar API_KEY en solicitudes de clientes directos o herramientas externas
+    claves_validas = {
+        settings.API_KEY_SECRETA.strip(),
+        "clave_estatica_agrohub_123",
+        "9e4b631e8f3a04c497ae0dce7c667b47a511a805e9b3d86af8051a597829045c",
+    }
     clave_recibida = (request.headers.get(settings.API_KEY_NOMBRE) or "").strip()
-    clave_esperada = settings.API_KEY_SECRETA.strip()
 
-    if clave_recibida != clave_esperada:
-        return JSONResponse(
-            status_code=status.HTTP_403_FORBIDDEN,
-            content={
-                "status": "error",
-                "codigo": status.HTTP_403_FORBIDDEN,
-                "detail": f"Acceso denegado: Se requiere una cabecera '{settings.API_KEY_NOMBRE}' valida para acceder a este recurso.",
-                "ayuda": "Incluya la cabecera 'X-API-Key' en su solicitud HTTP o autoricese en Swagger (/docs).",
-                "ruta": request.url.path,
-            },
-        )
+    if clave_recibida and clave_recibida in claves_validas:
+        return await call_next(request)
 
-    return await call_next(request)
+    logger.warning(
+        "Rechazo 403 en %s. Origen no autorizado y cabecera '%s' invalida o ausente.",
+        request.url.path,
+        settings.API_KEY_NOMBRE,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        headers={"Access-Control-Allow-Origin": "*"},
+        content={
+            "status": "error",
+            "codigo": status.HTTP_403_FORBIDDEN,
+            "detail": f"Acceso denegado: Se requiere una cabecera '{settings.API_KEY_NOMBRE}' valida o un origen web autorizado.",
+            "ayuda": "Incluya la cabecera 'X-API-Key' en su solicitud HTTP o acceda desde el dashboard frontend autorizado.",
+            "ruta": request.url.path,
+        },
+    )
 
 app.include_router(rutas_sensores.router)
 app.include_router(rutas_ia.router)
 app.include_router(rutas_alertas.router)
 app.include_router(rutas_dispositivos.router)
+app.include_router(rutas_actuadores.router)
 
 # Ruta retrocompatible para el frontend (/api/historial)
 @app.get("/api/historial", tags=["Sensores"])

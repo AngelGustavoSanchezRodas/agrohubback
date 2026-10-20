@@ -149,21 +149,39 @@ def actualizar_dispositivo(id_dispositivo: str, datos: DispositivoActualizar) ->
 @router.delete("/{id_dispositivo}")
 def eliminar_dispositivo(id_dispositivo: str) -> dict[str, str]:
     """
-    Elimina un dispositivo del catalogo.
+    Elimina un dispositivo del catalogo y remueve sus registros dependientes
+    para salvaguardar la integridad referencial en Supabase y limpiar su estado en Firebase.
     """
     try:
-        resultado = (
+        existente = (
             supabase.table("dispositivos")
-            .delete()
+            .select("id_dispositivo")
             .eq("id_dispositivo", id_dispositivo)
+            .limit(1)
             .execute()
         )
-        if not resultado.data:
+        if not existente.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Dispositivo con identificador '{id_dispositivo}' no encontrado",
             )
-        return {"mensaje": f"Dispositivo '{id_dispositivo}' eliminado correctamente"}
+
+        # 1. Eliminar dependencias referenciales en Supabase
+        supabase.table("registro_actuadores").delete().eq("id_dispositivo", id_dispositivo).execute()
+        supabase.table("alertas_agronomicas").delete().eq("id_dispositivo", id_dispositivo).execute()
+        supabase.table("telemetria_historica").delete().eq("id_dispositivo", id_dispositivo).execute()
+
+        # 2. Eliminar el dispositivo del catalogo
+        supabase.table("dispositivos").delete().eq("id_dispositivo", id_dispositivo).execute()
+
+        # 3. Limpiar estado en Firebase Realtime Database
+        try:
+            from db.firebase_client import firebase_db
+            firebase_db.reference(f"invernadero/{id_dispositivo}").delete()
+        except Exception as fb_err:
+            logger.warning("No se pudo remover nodo en Firebase para %s: %s", id_dispositivo, str(fb_err))
+
+        return {"mensaje": f"Dispositivo '{id_dispositivo}' y sus registros asociados eliminados correctamente"}
     except HTTPException:
         raise
     except Exception as e:

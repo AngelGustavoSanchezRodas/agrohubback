@@ -3,6 +3,7 @@ from starlette.testclient import TestClient
 from schemas.telemetria import PayloadESP32, TelemetriaESP32, TelemetriaLecturaRespuesta
 from schemas.dispositivos import DispositivoCrear, DispositivoActualizar, DispositivoRespuesta
 from schemas.alertas import AlertaAgronomicaCrear, AlertaAgronomicaRespuesta
+from schemas.actuadores import RegistroActuadorCrear, RegistroActuadorRespuesta
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from api.rutas_sensores import calcular_indice_calor, es_horario_diurno
@@ -83,9 +84,9 @@ class TestEsquemasYLogica(unittest.TestCase):
 
     def test_horario_diurno_para_alerta_de_luz(self) -> None:
         """La alerta de poca luz del TSL2561 solo corresponde al horario diurno local."""
-        zona = ZoneInfo("America/Guatemala")
-        self.assertTrue(es_horario_diurno(datetime(2026, 10, 19, 10, 0, tzinfo=zona)))
-        self.assertFalse(es_horario_diurno(datetime(2026, 10, 19, 22, 0, tzinfo=zona)))
+        from api.rutas_sensores import ZONA_INVERNADERO
+        self.assertTrue(es_horario_diurno(datetime(2026, 10, 19, 10, 0, tzinfo=ZONA_INVERNADERO)))
+        self.assertFalse(es_horario_diurno(datetime(2026, 10, 19, 22, 0, tzinfo=ZONA_INVERNADERO)))
 
     def test_calculo_indice_calor(self) -> None:
         """Verifica el calculo del indice de calor con algoritmos meteorologicos estandar."""
@@ -138,6 +139,35 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertEqual(alerta.severidad, "ALTA")
         self.assertEqual(alerta.estado, "ACTIVA")
 
+    def test_esquema_registro_actuadores(self) -> None:
+        """Verifica la validacion del esquema para la tabla public.registro_actuadores."""
+        actuador = RegistroActuadorCrear(
+            id_dispositivo="invernadero_prueba_01",
+            actuador="BOMBA",
+            accion="ENCENDIDO",
+            origen="ESP32_AUTO",
+        )
+        self.assertEqual(actuador.id_dispositivo, "invernadero_prueba_01")
+        self.assertEqual(actuador.actuador, "BOMBA")
+        self.assertEqual(actuador.accion, "ENCENDIDO")
+        self.assertEqual(actuador.origen, "ESP32_AUTO")
+
+    def test_payload_esp32_codigo_cpp(self) -> None:
+        """Verifica que PayloadESP32 admita exactamente el payload generado por el Heltec V3 en C++."""
+        datos_cpp = {
+            "id_dispositivo": "invernadero_prueba_01",
+            "temperatura": 25.5,
+            "humedad_ambiente": 60.0,
+            "humedad_suelo": 45.0,
+            "estado_bomba": False,
+        }
+        payload = PayloadESP32(**datos_cpp)
+        self.assertEqual(payload.temperatura, 25.5)
+        self.assertEqual(payload.humedad_ambiente, 60.0)
+        self.assertEqual(payload.humedad_suelo, 45.0)
+        self.assertFalse(payload.estado_bomba)
+        self.assertNotIn("intensidad_luz_lux", payload.model_fields_set)
+
     def test_middleware_comunicacion_frontend_api_key(self) -> None:
         """Verifica que el middleware proteja la comunicacion con el frontend exigiendo X-API-Key."""
         # 1. Rutas publicas funcionan sin cabecera
@@ -154,9 +184,10 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertEqual(res_con_key.status_code, 200)
 
     def test_rutas_registradas_fastapi(self) -> None:
-        """Verifica que las rutas activas de datos e IA esten registradas y las rutas de autenticacion y control hayan sido eliminadas."""
+        """Verifica que las rutas activas de consulta, IA y actuadores esten registradas y la ingesta HTTP directa haya sido removida en favor de Firebase."""
         rutas = list(app.openapi()["paths"].keys())
-        self.assertIn("/api/telemetria/ingesta", rutas)
+        self.assertNotIn("/api/telemetria/ingesta", rutas)
+        self.assertNotIn("/api/telemetria", rutas)
         self.assertIn("/api/telemetria/historial/{id_dispositivo}", rutas)
         self.assertIn("/api/telemetria/historial", rutas)
         self.assertIn("/api/ia/diagnostico/{id_dispositivo}", rutas)
@@ -164,10 +195,12 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertIn("/api/ia/programador/estado", rutas)
         self.assertIn("/api/dispositivos", rutas)
         self.assertIn("/api/alertas", rutas)
+        self.assertIn("/api/actuadores", rutas)
+        self.assertIn("/api/actuadores/historial/{id_dispositivo}", rutas)
         self.assertIn("/api/historial", rutas)
         self.assertIn("/", rutas)
 
-        # Confirmacion de que las rutas de seguridad complejas (JWT) y control ya no existen
+        # Confirmacion de que no existen rutas de ingesta HTTP ni autenticaciones complejas
         self.assertNotIn("/api/auth/login", rutas)
         self.assertNotIn("/api/control/bomba", rutas)
         self.assertNotIn("/api/control/actuador", rutas)
@@ -179,11 +212,24 @@ class TestEsquemasYLogica(unittest.TestCase):
         diagnostico = DiagnosticoAgronomico(
             estado_general="OPTIMO",
             riesgo_detectado="NINGUNO",
+            evaluacion_humedad="Humedad en rango optimo.",
+            evaluacion_luz="Iluminacion adecuada para fotosintesis.",
             recomendacion_tecnica="Mantener el riego programado.",
         )
         self.assertEqual(diagnostico.estado_general, "OPTIMO")
         self.assertEqual(diagnostico.riesgo_detectado, "NINGUNO")
+        self.assertEqual(diagnostico.evaluacion_humedad, "Humedad en rango optimo.")
+        self.assertEqual(diagnostico.evaluacion_luz, "Iluminacion adecuada para fotosintesis.")
         self.assertEqual(diagnostico.recomendacion_tecnica, "Mantener el riego programado.")
+
+        # Verificar asignacion de valores por defecto cuando no se especifican evaluaciones
+        diag_defaults = DiagnosticoAgronomico(
+            estado_general="ADVERTENCIA",
+            riesgo_detectado="ESTRES_HIDRICO",
+            recomendacion_tecnica="Aumentar frecuencia de riego.",
+        )
+        self.assertEqual(diag_defaults.evaluacion_humedad, "Sin evaluacion de humedad especificada")
+        self.assertEqual(diag_defaults.evaluacion_luz, "Sin evaluacion de luz especificada")
 
     def test_analisis_ia_estructura_respuesta(self) -> None:
         """Verifica que el servicio de IA retorne un diccionario con el contrato estructurado esperado."""

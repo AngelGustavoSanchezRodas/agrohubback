@@ -161,9 +161,13 @@ def actualizar_alerta(id_alerta: int, datos: AlertaAgronomicaActualizar) -> dict
     Actualiza el estado y opcionalmente el mensaje diagnostico de una alerta.
     """
     try:
-        payload_update: dict[str, Any] = {"estado": datos.estado.upper().strip()}
-        if datos.estado.upper().strip() == "RESUELTA":
+        estado_normalizado = datos.estado.upper().strip()
+        payload_update: dict[str, Any] = {"estado": estado_normalizado}
+        if estado_normalizado == "RESUELTA":
             payload_update["resuelta_en"] = datetime.now(timezone.utc).isoformat()
+        elif estado_normalizado == "ACTIVA":
+            payload_update["resuelta_en"] = None
+
         if datos.mensaje_diagnostico is not None:
             payload_update["mensaje_diagnostico"] = datos.mensaje_diagnostico
 
@@ -178,7 +182,28 @@ def actualizar_alerta(id_alerta: int, datos: AlertaAgronomicaActualizar) -> dict
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Alerta con identificador {id_alerta} no encontrada",
             )
-        return resultado.data[0]
+
+        alerta_actualizada = resultado.data[0]
+        id_dispositivo = alerta_actualizada.get("id_dispositivo")
+        if id_dispositivo:
+            try:
+                ref = firebase_db.reference(f"invernadero/{id_dispositivo}/ultima_alerta")
+                alerta_fb = ref.get()
+                if isinstance(alerta_fb, dict) and (
+                    alerta_fb.get("id_alerta") == id_alerta
+                    or alerta_fb.get("tipo_riesgo") == alerta_actualizada.get("tipo_riesgo")
+                ):
+                    actualizacion_fb = {
+                        "estado": estado_normalizado,
+                        "mensaje": alerta_actualizada.get("mensaje_diagnostico"),
+                    }
+                    if estado_normalizado == "RESUELTA":
+                        actualizacion_fb["resuelta_en"] = payload_update.get("resuelta_en")
+                    ref.update(actualizacion_fb)
+            except Exception as fb_err:
+                logger.warning("No se pudo sincronizar actualizacion de alerta en Firebase: %s", str(fb_err))
+
+        return alerta_actualizada
     except HTTPException:
         raise
     except Exception as e:

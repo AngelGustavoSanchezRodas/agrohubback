@@ -26,10 +26,12 @@ class DiagnosticoAgronomico(BaseModel):
     estado_general: str = Field(description="'OPTIMO', 'ADVERTENCIA' o 'CRITICO'")
     riesgo_detectado: str = Field(description="Nombre del riesgo o 'NINGUNO'")
     evaluacion_humedad: str = Field(
-        description="Evaluacion breve de humedad del aire y del suelo respecto al cultivo"
+        default="Sin evaluacion de humedad especificada",
+        description="Evaluacion breve de humedad del aire y del suelo respecto al cultivo",
     )
     evaluacion_luz: str = Field(
-        description="Evaluacion breve de la iluminancia respecto al cultivo"
+        default="Sin evaluacion de luz especificada",
+        description="Evaluacion breve de la iluminancia respecto al cultivo",
     )
     recomendacion_tecnica: str = Field(
         description="Que cambiar: riego, ventilacion, sombra o iluminacion, en 2-4 oraciones"
@@ -123,11 +125,15 @@ Instrucciones:
 5. Se breve y profesional. No inventes sensores que no aparecen en la telemetria.
 """
 
-    modelo_configurado = getattr(settings, "GEMINI_MODEL", "gemini-3.1-flash-lite")
+    modelo_configurado = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash")
     candidatos = [
         modelo_configurado,
-        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.8-flash",
+        "gemini-flash-latest",
         "gemini-flash-lite-latest",
+        "gemini-3.1-flash-lite",
     ]
     modelos_candidatos = list(dict.fromkeys(candidatos))
 
