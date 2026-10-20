@@ -4,10 +4,11 @@ import logging
 import time
 from typing import Any
 from core.config import settings
+from core.cultivos import CULTIVO_POR_DEFECTO, normalizar_cultivo
 from core.data_service import obtener_historial_reciente, formatear_datos_para_ia
 from core.ia_service import analizar_condiciones_agricolas
 from db.firebase_client import firebase_db
-from db.supabase_client import supabase, asegurar_dispositivo_registrado
+from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ def ejecutar_barrido_diagnostico_ia() -> dict[str, Any]:
         # 1. Obtener catalogo de dispositivos registrados
         respuesta_disp = (
             supabase.table("dispositivos")
-            .select("id_dispositivo, nombre, estado_conexion")
+            .select("id_dispositivo, nombre, estado_conexion, cultivo")
             .execute()
         )
         dispositivos = respuesta_disp.data or []
@@ -50,9 +51,9 @@ def ejecutar_barrido_diagnostico_ia() -> dict[str, Any]:
                 "timestamp": inicio_ts,
             }
 
-        # 2. Procesar cada dispositivo con pausa preventiva de cuota
         for disp in dispositivos:
             id_disp = disp["id_dispositivo"]
+            cultivo = normalizar_cultivo(disp.get("cultivo") or CULTIVO_POR_DEFECTO)
             total_evaluados += 1
 
             historial = obtener_historial_reciente(id_disp, limite=20)
@@ -63,34 +64,20 @@ def ejecutar_barrido_diagnostico_ia() -> dict[str, Any]:
             resumen_historico = formatear_datos_para_ia(historial)
             diagnostico_ia = analizar_condiciones_agricolas(
                 resumen_historico=resumen_historico,
-                cultivo="Tomate",
+                cultivo=cultivo,
             )
 
             riesgo = diagnostico_ia.get("riesgo_detectado", "NINGUNO")
             estado_general = diagnostico_ia.get("estado_general", "DESCONOCIDO")
 
-            # Persistir alerta si se detecta anomalia o riesgo
             if riesgo and riesgo.upper() != "NINGUNO" and estado_general in ["ADVERTENCIA", "CRITICO"]:
-                try:
-                    asegurar_dispositivo_registrado(id_disp)
-                    supabase.table("alertas_agronomicas").insert({
-                        "id_dispositivo": id_disp,
-                        "tipo_riesgo": riesgo,
-                        "severidad": estado_general,
-                        "mensaje_diagnostico": diagnostico_ia.get("recomendacion_tecnica", "Sin recomendacion adicional"),
-                        "estado": "ACTIVA",
-                    }).execute()
-                    total_alertas += 1
-                except Exception as db_err:
-                    logger.error("Error al persistir alerta programada para %s: %s", id_disp, str(db_err))
+                total_alertas += 1
 
-            # Actualizar estado de ultimo diagnostico en Firebase Realtime Database
             try:
                 ref = firebase_db.reference(f"invernadero/{id_disp}/ultimo_diagnostico_ia")
                 ref.set({
-                    "estado_general": estado_general,
-                    "riesgo_detectado": riesgo,
-                    "recomendacion_tecnica": diagnostico_ia.get("recomendacion_tecnica", ""),
+                    **diagnostico_ia,
+                    "cultivo": cultivo,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "origen": "TAREA_AUTOMATICA_PERIODICA",
                 })
@@ -99,6 +86,7 @@ def ejecutar_barrido_diagnostico_ia() -> dict[str, Any]:
 
             detalles.append({
                 "id_dispositivo": id_disp,
+                "cultivo": cultivo,
                 "estado_general": estado_general,
                 "riesgo_detectado": riesgo,
             })

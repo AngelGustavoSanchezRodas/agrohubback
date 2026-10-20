@@ -114,12 +114,15 @@ class TestEsquemasYLogica(unittest.TestCase):
             nombre="Estacion Central",
             ubicacion="Modulo A",
             estado_conexion="ACTIVO",
+            cultivo="Lechuga",
         )
         self.assertEqual(dispositivo.id_dispositivo, "invernadero_01")
         self.assertEqual(dispositivo.estado_conexion, "ACTIVO")
+        self.assertEqual(dispositivo.cultivo, "Lechuga")
 
-        actualizacion = DispositivoActualizar(estado_conexion="INACTIVO")
+        actualizacion = DispositivoActualizar(estado_conexion="INACTIVO", cultivo="Tomate")
         self.assertEqual(actualizacion.estado_conexion, "INACTIVO")
+        self.assertEqual(actualizacion.cultivo, "Tomate")
         self.assertIsNone(actualizacion.nombre)
 
     def test_esquema_alertas_agronomicas(self) -> None:

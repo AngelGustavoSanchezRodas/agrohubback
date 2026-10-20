@@ -25,6 +25,11 @@ class DispositivoBase(BaseModel):
         max_length=50,
         description="Estado de conectividad del dispositivo (ACTIVO, INACTIVO, ALERTA)"
     )
+    cultivo: str = Field(
+        default="Tomate",
+        max_length=80,
+        description="Cultivo o planta asignada al invernadero para el diagnostico con IA",
+    )
 
 class DispositivoCrear(DispositivoBase):
     """Esquema para el registro formal de un nuevo dispositivo."""
@@ -48,6 +53,11 @@ class DispositivoActualizar(BaseModel):
         max_length=50,
         description="Nuevo estado de conexion (ACTIVO, INACTIVO, ALERTA)"
     )
+    cultivo: str | None = Field(
+        default=None,
+        max_length=80,
+        description="Cultivo o planta asignada al invernadero",
+    )
 
 class DispositivoRespuesta(BaseModel):
     """Esquema de respuesta detallado con datos de persistencia del dispositivo."""
@@ -59,3 +69,4 @@ class DispositivoRespuesta(BaseModel):
         description="Marca temporal de instalacion y alta del dispositivo"
     )
     estado_conexion: str = Field(default="INACTIVO", description="Estado de conexion actual")
+    cultivo: str | None = Field(default="Tomate", description="Cultivo asignado para diagnostico IA")

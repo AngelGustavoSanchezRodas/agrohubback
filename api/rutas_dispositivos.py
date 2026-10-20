@@ -6,6 +6,7 @@ from schemas.dispositivos import (
     DispositivoActualizar,
     DispositivoRespuesta,
 )
+from core.cultivos import normalizar_cultivo
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ def registrar_dispositivo(datos: DispositivoCrear) -> dict[str, Any]:
             "nombre": datos.nombre,
             "ubicacion": datos.ubicacion,
             "estado_conexion": datos.estado_conexion,
+            "cultivo": normalizar_cultivo(datos.cultivo),
         }
         resultado = supabase.table("dispositivos").insert(payload_db).execute()
         if not resultado.data:
@@ -114,6 +116,8 @@ def actualizar_dispositivo(id_dispositivo: str, datos: DispositivoActualizar) ->
             payload_actualizacion["ubicacion"] = datos.ubicacion
         if datos.estado_conexion is not None:
             payload_actualizacion["estado_conexion"] = datos.estado_conexion
+        if datos.cultivo is not None:
+            payload_actualizacion["cultivo"] = normalizar_cultivo(datos.cultivo)
 
         if not payload_actualizacion:
             raise HTTPException(

@@ -91,6 +91,11 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
             "CRITICA",
             f"Temperatura critica de {payload.temperatura} C con indice de calor de {indice_calor} C.",
         ))
+    else:
+        try:
+            resolver_alerta_activa(payload.id_dispositivo, "GOLPE_CALOR")
+        except Exception as err_resolver:
+            logger.error("Error al resolver golpe de calor: %s", str(err_resolver))
 
     if payload.temperatura < 4.0:
         alertas_detectadas.append((
@@ -98,6 +103,11 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
             "ALTA",
             f"Temperatura de {payload.temperatura} C cercana a congelamiento. Posible necrosis celular.",
         ))
+    else:
+        try:
+            resolver_alerta_activa(payload.id_dispositivo, "RIESGO_HELADA")
+        except Exception as err_resolver:
+            logger.error("Error al resolver riesgo de helada: %s", str(err_resolver))
 
     if payload.humedad_ambiente > 85.0 and payload.temperatura > 22.0:
         alertas_detectadas.append((
@@ -105,14 +115,13 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
             "MEDIA",
             f"Humedad ambiental del {payload.humedad_ambiente}% y {payload.temperatura} C propician hongos.",
         ))
+    else:
+        try:
+            resolver_alerta_activa(payload.id_dispositivo, "PROLIFERACION_HONGOS")
+        except Exception as err_resolver:
+            logger.error("Error al resolver proliferacion de hongos: %s", str(err_resolver))
 
-    if payload.luz_uv > 8.0:
-        alertas_detectadas.append((
-            "RADIACION_UV_EXTREMA",
-            "MEDIA",
-            f"Indice de radiacion UV ({payload.luz_uv}) excesivo para follaje joven.",
-        ))
-
+    # El hardware usa TSL2561 (lux). luz_uv queda fuera de las alertas automaticas.
     if "intensidad_luz_lux" in payload.model_fields_set:
         if es_horario_diurno() and payload.intensidad_luz_lux < UMBRAL_LUZ_BAJA_LUX:
             alertas_detectadas.append((
@@ -132,6 +141,11 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
             "MEDIA",
             f"Voltaje de celda bajo ({payload.voltaje_bateria} V). Se recomienda recarga inminente.",
         ))
+    elif payload.voltaje_bateria is not None:
+        try:
+            resolver_alerta_activa(payload.id_dispositivo, "BATERIA_BAJA")
+        except Exception as err_resolver:
+            logger.error("Error al resolver bateria baja: %s", str(err_resolver))
 
     timestamp_actual = datetime.now(timezone.utc).isoformat()
 

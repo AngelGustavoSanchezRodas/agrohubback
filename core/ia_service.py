@@ -6,10 +6,10 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 from core.config import GEMINI_API_KEY, settings
+from core.cultivos import normalizar_cultivo, texto_perfil_para_prompt
 
 logger = logging.getLogger(__name__)
 
-# 1. Configurar el nuevo cliente de Google GenAI
 api_key = (os.environ.get("GEMINI_API_KEY") or GEMINI_API_KEY).strip()
 client: genai.Client | None = None
 
@@ -21,14 +21,22 @@ if api_key:
 else:
     logger.warning("GEMINI_API_KEY no esta configurada en el entorno.")
 
-# 2. Forzar la estructura de salida usando Pydantic (Nueva caracteristica de genai)
+
 class DiagnosticoAgronomico(BaseModel):
     estado_general: str = Field(description="'OPTIMO', 'ADVERTENCIA' o 'CRITICO'")
     riesgo_detectado: str = Field(description="Nombre del riesgo o 'NINGUNO'")
-    recomendacion_tecnica: str = Field(description="Instruccion breve y profesional")
+    evaluacion_humedad: str = Field(
+        description="Evaluacion breve de humedad del aire y del suelo respecto al cultivo"
+    )
+    evaluacion_luz: str = Field(
+        description="Evaluacion breve de la iluminancia respecto al cultivo"
+    )
+    recomendacion_tecnica: str = Field(
+        description="Que cambiar: riego, ventilacion, sombra o iluminacion, en 2-4 oraciones"
+    )
+
 
 def _resumir_error_ia(error: Exception) -> str:
-    """Extrae un resumen conciso y legible del error sin volcar JSON crudo en la consola."""
     texto = str(error)
     if "429" in texto or "RESOURCE_EXHAUSTED" in texto:
         return "429 Cuota diaria agotada (RESOURCE_EXHAUSTED)"
@@ -41,11 +49,8 @@ def _resumir_error_ia(error: Exception) -> str:
     linea = texto.split("\n")[0]
     return linea[:90] if len(linea) > 90 else linea
 
+
 def _clasificar_error_ia(error: Exception | None) -> tuple[str, str]:
-    """
-    Traduce las excepciones de la API de Google GenAI a mensajes limpios y comprensibles en espanol.
-    Retorna una tupla: (riesgo_detectado, recomendacion_tecnica).
-    """
     if not error:
         return (
             "Error de comunicacion con IA",
@@ -80,30 +85,43 @@ def _clasificar_error_ia(error: Exception | None) -> tuple[str, str]:
         "Ocurrio un fallo de comunicacion con el proveedor de inteligencia artificial. Verifique la conexion y disponibilidad del servicio.",
     )
 
+
 def analizar_condiciones_agricolas(
     resumen_historico: str,
-    cultivo: str = "Tomate"
+    cultivo: str = "Tomate",
 ) -> dict[str, str]:
     """
-    Analiza el resumen temporal consolidado de variables microclimaticas
-    utilizando el nuevo SDK de Google GenAI con salida estructurada en Pydantic.
+    Analiza el resumen temporal de telemetria respecto al perfil del cultivo
+    usando Google GenAI con salida estructurada.
     """
+    cultivo_norm = normalizar_cultivo(cultivo)
     clave_activa = (os.environ.get("GEMINI_API_KEY") or GEMINI_API_KEY).strip()
     if not client or not clave_activa:
         logger.warning("GEMINI_API_KEY no esta configurada en el entorno.")
         return {
             "estado_general": "DESCONOCIDO",
             "riesgo_detectado": "Configuracion pendiente de IA",
+            "evaluacion_humedad": "Sin evaluacion: falta configurar GEMINI_API_KEY.",
+            "evaluacion_luz": "Sin evaluacion: falta configurar GEMINI_API_KEY.",
             "recomendacion_tecnica": "Configure la variable GEMINI_API_KEY en el entorno para habilitar analisis inteligente.",
         }
 
+    perfil = texto_perfil_para_prompt(cultivo_norm)
     prompt = f"""
-    Eres un ingeniero agronomo experto. Analiza el siguiente historial de un invernadero cultivando {cultivo}:
-    
-    {resumen_historico}
+Eres un ingeniero agronomo. Debes diagnosticar un invernadero escolar segun el cultivo elegido.
 
-    Evalua si existe algun riesgo (plagas, hongos, estres hidrico).
-    """
+{perfil}
+
+Telemetria reciente del invernadero:
+{resumen_historico}
+
+Instrucciones:
+1. Compara temperatura, humedad del aire, humedad del suelo e iluminancia con los rangos del cultivo.
+2. Indica si hay exceso o falta de humedad (aire y/o suelo) y de luz.
+3. Detecta riesgos tipicos (hongos, estres hidrico, calor, poca luz diurna, etc.) o NINGUNO.
+4. Da recomendaciones concretas y accionables: riego, ventilacion, sombra, iluminacion o monitoreo.
+5. Se breve y profesional. No inventes sensores que no aparecen en la telemetria.
+"""
 
     modelo_configurado = getattr(settings, "GEMINI_MODEL", "gemini-3.1-flash-lite")
     candidatos = [
@@ -111,14 +129,12 @@ def analizar_condiciones_agricolas(
         "gemini-3.1-flash-lite",
         "gemini-flash-lite-latest",
     ]
-    # Preservar orden prioritario descartando duplicados
     modelos_candidatos = list(dict.fromkeys(candidatos))
 
     ultimo_error: Exception | None = None
 
     for modelo in modelos_candidatos:
         try:
-            # 3. Llamar al modelo forzando la salida estructurada
             response = client.models.generate_content(
                 model=modelo,
                 contents=prompt,
@@ -132,7 +148,15 @@ def analizar_condiciones_agricolas(
             return {
                 "estado_general": str(diagnostico.get("estado_general", "DESCONOCIDO")),
                 "riesgo_detectado": str(diagnostico.get("riesgo_detectado", "NINGUNO")),
-                "recomendacion_tecnica": str(diagnostico.get("recomendacion_tecnica", "Sin recomendaciones tecnicas.")),
+                "evaluacion_humedad": str(
+                    diagnostico.get("evaluacion_humedad", "Sin evaluacion de humedad.")
+                ),
+                "evaluacion_luz": str(
+                    diagnostico.get("evaluacion_luz", "Sin evaluacion de luz.")
+                ),
+                "recomendacion_tecnica": str(
+                    diagnostico.get("recomendacion_tecnica", "Sin recomendaciones tecnicas.")
+                ),
             }
         except Exception as e:
             ultimo_error = e
@@ -144,9 +168,14 @@ def analizar_condiciones_agricolas(
             continue
 
     riesgo, recomendacion = _clasificar_error_ia(ultimo_error)
-    logger.error("No se pudo completar el analisis con ningun modelo de IA: %s", _resumir_error_ia(ultimo_error))
+    logger.error(
+        "No se pudo completar el analisis con ningun modelo de IA: %s",
+        _resumir_error_ia(ultimo_error),
+    )
     return {
         "estado_general": "DESCONOCIDO",
         "riesgo_detectado": riesgo,
+        "evaluacion_humedad": "No disponible por fallo del servicio de IA.",
+        "evaluacion_luz": "No disponible por fallo del servicio de IA.",
         "recomendacion_tecnica": recomendacion,
     }

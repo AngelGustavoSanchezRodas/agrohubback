@@ -76,6 +76,15 @@ def formatear_datos_para_ia(datos_crudos: list[dict[str, Any]]) -> str:
     lux_promedio = sum(luces_lux) / len(luces_lux) if luces_lux else 0.0
     lux_min = min(luces_lux) if luces_lux else 0.0
 
+    bombas = [bool(d.get("estado_bomba")) for d in datos_crudos if d.get("estado_bomba") is not None]
+    bomba_encendida = sum(1 for b in bombas if b)
+    indices_calor = [
+        float(d["indice_calor"])
+        for d in datos_crudos
+        if d.get("indice_calor") is not None
+    ]
+    calor_promedio = sum(indices_calor) / len(indices_calor) if indices_calor else 0.0
+
     resumen = (
         f"Analisis temporal de las ultimas {total_lecturas} lecturas de telemetria:\n"
         f"- Temperatura Ambiente: Promedio {temp_promedio:.1f} C (Maximo: {temp_max:.1f} C, Minimo: {temp_min:.1f} C)\n"
@@ -87,5 +96,11 @@ def formatear_datos_para_ia(datos_crudos: list[dict[str, Any]]) -> str:
         resumen += (
             f"\n- Intensidad de luz TSL2561: Promedio {lux_promedio:.0f} lux "
             f"(Minimo: {lux_min:.0f} lux)"
+        )
+    if indices_calor:
+        resumen += f"\n- Indice de calor promedio: {calor_promedio:.1f} C"
+    if bombas:
+        resumen += (
+            f"\n- Estado de bomba reportado: encendida en {bomba_encendida} de {len(bombas)} lecturas"
         )
     return resumen

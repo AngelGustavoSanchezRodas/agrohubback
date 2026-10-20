@@ -39,5 +39,11 @@ class Settings:
     # Copia el estado vivo de Firebase hacia el historial de Supabase.
     PUENTE_FIREBASE_HABILITADO: bool = os.getenv("PUENTE_FIREBASE_HABILITADO", "true").lower() in ("true", "1", "yes")
     PUENTE_FIREBASE_INTERVALO_SEGUNDOS: int = int(os.getenv("PUENTE_FIREBASE_INTERVALO_SEGUNDOS", "30"))
+    # Nodos de prueba viejos que no deben alimentar historial ni alertas.
+    DISPOSITIVOS_IGNORADOS: set[str] = {
+        id.strip()
+        for id in os.getenv("DISPOSITIVOS_IGNORADOS", "invernadero_01").split(",")
+        if id.strip()
+    }
 
 settings = Settings()

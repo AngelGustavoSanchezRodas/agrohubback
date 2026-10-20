@@ -107,6 +107,7 @@ CREATE TABLE public.dispositivos (
   ubicacion character varying,
   fecha_instalacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   estado_conexion character varying DEFAULT 'INACTIVO'::character varying,
+  cultivo character varying DEFAULT 'Tomate'::character varying,
   CONSTRAINT dispositivos_pkey PRIMARY KEY (id_dispositivo)
 );
 
@@ -143,6 +144,10 @@ CREATE TABLE public.alertas_agronomicas (
 ALTER TABLE public.telemetria_historica
   ADD COLUMN IF NOT EXISTS intensidad_luz_lux numeric DEFAULT 0.0,
   ADD COLUMN IF NOT EXISTS estado_bomba boolean DEFAULT false;
+
+-- Cultivo asignado al invernadero para el diagnostico con IA:
+ALTER TABLE public.dispositivos
+  ADD COLUMN IF NOT EXISTS cultivo character varying DEFAULT 'Tomate';
 ```
 
 ---

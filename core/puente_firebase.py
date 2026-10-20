@@ -63,19 +63,22 @@ def copiar_estados_a_historial() -> int:
     for id_dispositivo, nodo in arbol.items():
         if not isinstance(nodo, dict):
             continue
+        id_str = str(id_dispositivo)
+        if id_str in settings.DISPOSITIVOS_IGNORADOS:
+            continue
         estado = nodo.get("estado_actual")
         if not isinstance(estado, dict):
             continue
 
         marca = str(estado.get("timestamp") or "")
-        if marca and _ultima_marca_por_dispositivo.get(id_dispositivo) == marca:
+        if marca and _ultima_marca_por_dispositivo.get(id_str) == marca:
             continue
 
-        payload = lectura_desde_estado(str(id_dispositivo), estado)
+        payload = lectura_desde_estado(id_str, estado)
         if payload is None:
-            logger.warning("Lectura invalida omitida para %s", id_dispositivo)
+            logger.warning("Lectura invalida omitida para %s", id_str)
             if marca:
-                _ultima_marca_por_dispositivo[id_dispositivo] = marca
+                _ultima_marca_por_dispositivo[id_str] = marca
             continue
 
         indice_calor = calcular_indice_calor(payload.temperatura, payload.humedad_ambiente)
@@ -93,7 +96,7 @@ def copiar_estados_a_historial() -> int:
         }).execute()
         evaluar_alertas_automaticas(payload, indice_calor)
         if marca:
-            _ultima_marca_por_dispositivo[id_dispositivo] = marca
+            _ultima_marca_por_dispositivo[id_str] = marca
         guardados += 1
         logger.info(
             "Historial actualizado para %s: suelo %.1f %%, bomba %s",
