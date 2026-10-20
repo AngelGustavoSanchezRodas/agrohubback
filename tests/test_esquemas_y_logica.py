@@ -6,6 +6,7 @@ from schemas.alertas import AlertaAgronomicaCrear, AlertaAgronomicaRespuesta
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from api.rutas_sensores import calcular_indice_calor, es_horario_diurno
+from core.puente_firebase import lectura_desde_estado, numero_finito
 from core.data_service import formatear_datos_para_ia
 from core.security import verificar_api_key
 from core.config import settings
@@ -55,6 +56,30 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertTrue(payload.estado_bomba)
         self.assertEqual(payload.indice_calor, 30.1)
         self.assertEqual(payload.voltaje_bateria, 3.85)
+
+    def test_lectura_firebase_descarta_nan_del_dht22(self) -> None:
+        """Una lectura NaN del DHT22 no debe entrar al historial."""
+        self.assertIsNone(numero_finito(float("nan")))
+        self.assertIsNone(lectura_desde_estado("invernadero_prueba_01", {
+            "temperatura": float("nan"),
+            "humedad_ambiente": 70.0,
+            "humedad_suelo": 40.0,
+        }))
+
+    def test_lectura_firebase_ajusta_suelo_al_rango_valido(self) -> None:
+        """El mapeo ADC del Heltec puede salir de 0 a 100. El contrato lo recorta."""
+        payload = lectura_desde_estado("invernadero_prueba_01", {
+            "temperatura": 24.0,
+            "humedad_ambiente": 60.0,
+            "humedad_suelo": 140.0,
+            "intensidad_luz_lux": 106.0,
+            "estado_bomba": True,
+        })
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload.humedad_suelo, 100.0)
+        self.assertEqual(payload.intensidad_luz_lux, 106.0)
+        self.assertTrue(payload.estado_bomba)
 
     def test_horario_diurno_para_alerta_de_luz(self) -> None:
         """La alerta de poca luz del TSL2561 solo corresponde al horario diurno local."""

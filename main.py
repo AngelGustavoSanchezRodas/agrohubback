@@ -8,6 +8,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from core.config import settings
 from core.ia_scheduler import ciclo_programado_ia
+from core.puente_firebase import ciclo_puente_firebase
 from api import rutas_sensores, rutas_ia, rutas_alertas, rutas_dispositivos
 
 logger = logging.getLogger(__name__)
@@ -20,15 +21,19 @@ async def lifespan(app: FastAPI):
     y asegura una cancelacion limpia al apagar el servidor.
     """
     tarea_scheduler: asyncio.Task[None] | None = None
+    tarea_puente: asyncio.Task[None] | None = None
     if settings.IA_SCHEDULER_HABILITADO:
         tarea_scheduler = asyncio.create_task(ciclo_programado_ia())
+    if settings.PUENTE_FIREBASE_HABILITADO:
+        tarea_puente = asyncio.create_task(ciclo_puente_firebase())
     yield
-    if tarea_scheduler:
-        tarea_scheduler.cancel()
-        try:
-            await tarea_scheduler
-        except asyncio.CancelledError:
-            pass
+    for tarea in (tarea_scheduler, tarea_puente):
+        if tarea:
+            tarea.cancel()
+            try:
+                await tarea
+            except asyncio.CancelledError:
+                pass
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

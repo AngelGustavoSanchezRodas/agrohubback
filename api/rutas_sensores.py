@@ -12,9 +12,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/telemetria", tags=["Sensores"])
 
-# Mismos umbrales que el riego local del Heltec: enciende en 30 % y apaga en 45 %.
-UMBRAL_HUMEDAD_SUELO_ENCENDIDO = 30.0
-UMBRAL_HUMEDAD_SUELO_APAGADO = 45.0
+# El firmware enciende la bomba cuando el ADC del suelo supera 2000.
+# Con seco=3000 y mojado=1200, ese punto equivale a 55.6 % de humedad.
+UMBRAL_HUMEDAD_SUELO_ENCENDIDO = 55.6
+UMBRAL_HUMEDAD_SUELO_APAGADO = 55.6
 UMBRAL_LUZ_BAJA_LUX = 1000.0
 ZONA_INVERNADERO = ZoneInfo("America/Guatemala")
 HORA_INICIO_DIA = 6

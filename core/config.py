@@ -36,4 +36,8 @@ class Settings:
     IA_SCHEDULER_HABILITADO: bool = os.getenv("IA_SCHEDULER_HABILITADO", "true").lower() in ("true", "1", "yes")
     IA_SCHEDULER_INTERVALO_MINUTOS: int = int(os.getenv("IA_SCHEDULER_INTERVALO_MINUTOS", "240"))
 
+    # Copia el estado vivo de Firebase hacia el historial de Supabase.
+    PUENTE_FIREBASE_HABILITADO: bool = os.getenv("PUENTE_FIREBASE_HABILITADO", "true").lower() in ("true", "1", "yes")
+    PUENTE_FIREBASE_INTERVALO_SEGUNDOS: int = int(os.getenv("PUENTE_FIREBASE_INTERVALO_SEGUNDOS", "30"))
+
 settings = Settings()
