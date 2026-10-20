@@ -3,7 +3,9 @@ from starlette.testclient import TestClient
 from schemas.telemetria import PayloadESP32, TelemetriaESP32, TelemetriaLecturaRespuesta
 from schemas.dispositivos import DispositivoCrear, DispositivoActualizar, DispositivoRespuesta
 from schemas.alertas import AlertaAgronomicaCrear, AlertaAgronomicaRespuesta
-from api.rutas_sensores import calcular_indice_calor
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from api.rutas_sensores import calcular_indice_calor, es_horario_diurno
 from core.data_service import formatear_datos_para_ia
 from core.security import verificar_api_key
 from core.config import settings
@@ -29,6 +31,8 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertEqual(payload.humedad_ambiente, 60.0)
         self.assertEqual(payload.humedad_suelo, 45.0)
         self.assertEqual(payload.luz_uv, 0.0)
+        self.assertEqual(payload.intensidad_luz_lux, 0.0)
+        self.assertFalse(payload.estado_bomba)
         self.assertIsNone(payload.indice_calor)
         self.assertIsNone(payload.voltaje_bateria)
 
@@ -40,13 +44,23 @@ class TestEsquemasYLogica(unittest.TestCase):
             "humedad_ambiente": 75.0,
             "humedad_suelo": 52.3,
             "luz_uv": 4.5,
+            "intensidad_luz_lux": 12500,
+            "estado_bomba": True,
             "indice_calor": 30.1,
             "voltaje_bateria": 3.85,
         }
         payload = PayloadESP32(**datos)
         self.assertEqual(payload.luz_uv, 4.5)
+        self.assertEqual(payload.intensidad_luz_lux, 12500)
+        self.assertTrue(payload.estado_bomba)
         self.assertEqual(payload.indice_calor, 30.1)
         self.assertEqual(payload.voltaje_bateria, 3.85)
+
+    def test_horario_diurno_para_alerta_de_luz(self) -> None:
+        """La alerta de poca luz del TSL2561 solo corresponde al horario diurno local."""
+        zona = ZoneInfo("America/Guatemala")
+        self.assertTrue(es_horario_diurno(datetime(2026, 10, 19, 10, 0, tzinfo=zona)))
+        self.assertFalse(es_horario_diurno(datetime(2026, 10, 19, 22, 0, tzinfo=zona)))
 
     def test_calculo_indice_calor(self) -> None:
         """Verifica el calculo del indice de calor con algoritmos meteorologicos estandar."""

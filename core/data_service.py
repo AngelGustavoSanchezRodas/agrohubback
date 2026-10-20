@@ -68,6 +68,14 @@ def formatear_datos_para_ia(datos_crudos: list[dict[str, Any]]) -> str:
     uv_promedio = sum(luces_uv) / len(luces_uv) if luces_uv else 0.0
     uv_max = max(luces_uv) if luces_uv else 0.0
 
+    luces_lux = [
+        float(d["intensidad_luz_lux"])
+        for d in datos_crudos
+        if d.get("intensidad_luz_lux") is not None
+    ]
+    lux_promedio = sum(luces_lux) / len(luces_lux) if luces_lux else 0.0
+    lux_min = min(luces_lux) if luces_lux else 0.0
+
     resumen = (
         f"Analisis temporal de las ultimas {total_lecturas} lecturas de telemetria:\n"
         f"- Temperatura Ambiente: Promedio {temp_promedio:.1f} C (Maximo: {temp_max:.1f} C, Minimo: {temp_min:.1f} C)\n"
@@ -75,4 +83,9 @@ def formatear_datos_para_ia(datos_crudos: list[dict[str, Any]]) -> str:
         f"- Humedad del Sustrato / Suelo: Promedio {suelo_promedio:.1f}% (Minimo critico registrado: {suelo_min:.1f}%)\n"
         f"- Radiacion Ultravioleta (UV): Promedio {uv_promedio:.1f} (Pico maximo: {uv_max:.1f})"
     )
+    if luces_lux:
+        resumen += (
+            f"\n- Intensidad de luz TSL2561: Promedio {lux_promedio:.0f} lux "
+            f"(Minimo: {lux_min:.0f} lux)"
+        )
     return resumen

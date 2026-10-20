@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import logging
 from typing import Any
 from fastapi import APIRouter, HTTPException, status
@@ -10,6 +11,14 @@ from core.data_service import obtener_historial_reciente, obtener_historial_gene
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/telemetria", tags=["Sensores"])
+
+# Mismos umbrales que el riego local del Heltec: enciende en 30 % y apaga en 45 %.
+UMBRAL_HUMEDAD_SUELO_ENCENDIDO = 30.0
+UMBRAL_HUMEDAD_SUELO_APAGADO = 45.0
+UMBRAL_LUZ_BAJA_LUX = 1000.0
+ZONA_INVERNADERO = ZoneInfo("America/Guatemala")
+HORA_INICIO_DIA = 6
+HORA_FIN_DIA = 18
 
 def calcular_indice_calor(temperatura_c: float, humedad_relativa: float) -> float:
     """
@@ -40,6 +49,22 @@ def calcular_indice_calor(temperatura_c: float, humedad_relativa: float) -> floa
     hi_c = (hi_f - 32.0) * 5.0 / 9.0
     return round(hi_c, 2)
 
+def es_horario_diurno(momento: datetime | None = None) -> bool:
+    """El TSL2561 marca poca luz toda la noche. La alerta solo aplica de dia."""
+    actual = momento or datetime.now(ZONA_INVERNADERO)
+    if actual.tzinfo is None:
+        actual = actual.replace(tzinfo=ZONA_INVERNADERO)
+    else:
+        actual = actual.astimezone(ZONA_INVERNADERO)
+    return HORA_INICIO_DIA <= actual.hour < HORA_FIN_DIA
+
+def resolver_alerta_activa(id_dispositivo: str, tipo_riesgo: str) -> None:
+    """Cierra la alerta activa cuando la condicion que la origino ya no se cumple."""
+    supabase.table("alertas_agronomicas").update({
+        "estado": "RESUELTA",
+        "resuelta_en": datetime.now(timezone.utc).isoformat(),
+    }).eq("id_dispositivo", id_dispositivo).eq("tipo_riesgo", tipo_riesgo).eq("estado", "ACTIVA").execute()
+
 def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> None:
     """
     Evalua umbrales criticos agronomicos y registra alertas activas si se detectan anomalias,
@@ -47,12 +72,17 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
     """
     alertas_detectadas: list[tuple[str, str, str]] = []
 
-    if payload.humedad_suelo < 20.0:
+    if payload.humedad_suelo < UMBRAL_HUMEDAD_SUELO_ENCENDIDO:
         alertas_detectadas.append((
             "ESTRES_HIDRICO",
             "ALTA",
-            f"Humedad de suelo critica ({payload.humedad_suelo}%). Riesgo de marchitez permanente.",
+            f"Humedad de suelo en {payload.humedad_suelo}%. El Heltec enciende la bomba por debajo de {UMBRAL_HUMEDAD_SUELO_ENCENDIDO:.0f}%.",
         ))
+    elif payload.humedad_suelo >= UMBRAL_HUMEDAD_SUELO_APAGADO:
+        try:
+            resolver_alerta_activa(payload.id_dispositivo, "ESTRES_HIDRICO")
+        except Exception as err_resolver:
+            logger.error("Error al resolver estres hidrico: %s", str(err_resolver))
 
     if payload.temperatura > 38.0 or indice_calor > 41.0:
         alertas_detectadas.append((
@@ -81,6 +111,19 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
             "MEDIA",
             f"Indice de radiacion UV ({payload.luz_uv}) excesivo para follaje joven.",
         ))
+
+    if "intensidad_luz_lux" in payload.model_fields_set:
+        if es_horario_diurno() and payload.intensidad_luz_lux < UMBRAL_LUZ_BAJA_LUX:
+            alertas_detectadas.append((
+                "LUZ_INSUFICIENTE",
+                "MEDIA",
+                f"Iluminancia de {payload.intensidad_luz_lux:.0f} lux durante el dia, por debajo de {UMBRAL_LUZ_BAJA_LUX:.0f} lux.",
+            ))
+        else:
+            try:
+                resolver_alerta_activa(payload.id_dispositivo, "LUZ_INSUFICIENTE")
+            except Exception as err_resolver:
+                logger.error("Error al resolver luz insuficiente: %s", str(err_resolver))
 
     if payload.voltaje_bateria is not None and payload.voltaje_bateria < 3.3:
         alertas_detectadas.append((
@@ -151,6 +194,8 @@ def recibir_datos_esp32(payload: PayloadESP32) -> dict[str, str]:
             "humedad_ambiente": payload.humedad_ambiente,
             "humedad_suelo": payload.humedad_suelo,
             "luz_uv": payload.luz_uv,
+            "intensidad_luz_lux": payload.intensidad_luz_lux,
+            "estado_bomba": payload.estado_bomba,
             "indice_calor": indice_calor_final,
             "voltaje_bateria": payload.voltaje_bateria,
             "timestamp": timestamp_actual,
@@ -163,6 +208,8 @@ def recibir_datos_esp32(payload: PayloadESP32) -> dict[str, str]:
             "humedad_ambiente": payload.humedad_ambiente,
             "humedad_suelo": payload.humedad_suelo,
             "luz_uv": payload.luz_uv,
+            "intensidad_luz_lux": payload.intensidad_luz_lux,
+            "estado_bomba": payload.estado_bomba,
             "indice_calor": indice_calor_final,
             "voltaje_bateria": payload.voltaje_bateria,
         }

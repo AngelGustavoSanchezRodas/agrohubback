@@ -117,6 +117,8 @@ CREATE TABLE public.telemetria_historica (
   humedad_ambiente numeric NOT NULL,
   humedad_suelo numeric NOT NULL,
   luz_uv numeric DEFAULT 0.0,
+  intensidad_luz_lux numeric DEFAULT 0.0,
+  estado_bomba boolean DEFAULT false,
   indice_calor numeric,
   voltaje_bateria numeric,
   creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
@@ -136,6 +138,11 @@ CREATE TABLE public.alertas_agronomicas (
   CONSTRAINT alertas_agronomicas_pkey PRIMARY KEY (id),
   CONSTRAINT alertas_agronomicas_id_dispositivo_fkey FOREIGN KEY (id_dispositivo) REFERENCES public.dispositivos(id_dispositivo)
 );
+
+-- Si las tablas ya existen, agrega las columnas del TSL2561 y de la bomba:
+ALTER TABLE public.telemetria_historica
+  ADD COLUMN IF NOT EXISTS intensidad_luz_lux numeric DEFAULT 0.0,
+  ADD COLUMN IF NOT EXISTS estado_bomba boolean DEFAULT false;
 ```
 
 ---
@@ -159,11 +166,12 @@ uvicorn main:app --reload
 - **Cuerpo (JSON):**
   ```json
   {
-    "id_dispositivo": "invernadero_01",
+    "id_dispositivo": "invernadero_prueba_01",
     "temperatura": 24.5,
     "humedad_ambiente": 65.0,
-    "humedad_suelo": 45.2,
-    "luz_uv": 2.1,
+    "humedad_suelo": 28.0,
+    "intensidad_luz_lux": 12500,
+    "estado_bomba": true,
     "voltaje_bateria": 3.95
   }
   ```

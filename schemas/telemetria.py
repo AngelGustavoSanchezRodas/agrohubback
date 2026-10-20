@@ -31,7 +31,17 @@ class PayloadESP32(BaseModel):
     luz_uv: float = Field(
         default=0.0, 
         ge=0.0, 
-        description="Indice o medicion de luz ultravioleta"
+        description="Indice UV solo si existe un sensor UV. El TSL2561 no usa este campo."
+    )
+    intensidad_luz_lux: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=100000.0,
+        description="Iluminancia del TSL2561 en lux"
+    )
+    estado_bomba: bool = Field(
+        default=False,
+        description="True si el Heltec tiene el rele de la bomba activado"
     )
     indice_calor: float | None = Field(
         default=None, 
@@ -51,6 +61,8 @@ class TelemetriaESP32(BaseModel):
     humedad_ambiente: float = Field(..., description="Porcentaje de humedad relativa ambiente")
     humedad_suelo: float = Field(..., description="Porcentaje de humedad de la tierra o sustrato")
     luz_uv: float = Field(default=0.0, description="Indice de radiacion UV medido")
+    intensidad_luz_lux: float = Field(default=0.0, description="Iluminancia del TSL2561 en lux")
+    estado_bomba: bool = Field(default=False, description="Estado del rele de la bomba")
     indice_calor: float | None = Field(default=None, description="Indice de calor en grados Celsius")
     voltaje_bateria: float | None = Field(default=None, description="Voltaje de bateria en voltios")
 
@@ -62,6 +74,8 @@ class TelemetriaLecturaRespuesta(BaseModel):
     humedad_ambiente: float = Field(..., description="Humedad ambiente registrada en porcentaje")
     humedad_suelo: float = Field(..., description="Humedad de sustrato registrada en porcentaje")
     luz_uv: float = Field(default=0.0, description="Nivel de radiacion ultravioleta")
+    intensidad_luz_lux: float = Field(default=0.0, description="Iluminancia registrada en lux")
+    estado_bomba: bool = Field(default=False, description="Estado del rele de la bomba en esa lectura")
     indice_calor: float | None = Field(default=None, description="Indice de calor estimado o medido")
     voltaje_bateria: float | None = Field(default=None, description="Voltaje de bateria en el instante de la lectura")
     creado_en: datetime | str | None = Field(default=None, description="Marca de tiempo UTC de creacion del registro")
