@@ -38,7 +38,9 @@ class DiagnosticoAgronomico(BaseModel):
     )
 
 
-def _resumir_error_ia(error: Exception) -> str:
+def _resumir_error_ia(error: Exception | None) -> str:
+    if not error:
+        return "Sin detalle de error"
     texto = str(error)
     if "429" in texto or "RESOURCE_EXHAUSTED" in texto:
         return "429 Cuota diaria agotada (RESOURCE_EXHAUSTED)"

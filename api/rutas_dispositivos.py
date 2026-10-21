@@ -6,7 +6,9 @@ from schemas.dispositivos import (
     DispositivoActualizar,
     DispositivoRespuesta,
 )
+from core.config import settings
 from core.cultivos import normalizar_cultivo
+from db.firebase_client import firebase_db
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -25,7 +27,7 @@ def listar_dispositivos() -> list[dict[str, Any]]:
             .order("id_dispositivo", desc=False)
             .execute()
         )
-        return resultado.data
+        return resultado.data or []
     except Exception as e:
         logger.error("Error al obtener listado de dispositivos: %s", str(e))
         raise HTTPException(
@@ -176,8 +178,7 @@ def eliminar_dispositivo(id_dispositivo: str) -> dict[str, str]:
 
         # 3. Limpiar estado en Firebase Realtime Database
         try:
-            from db.firebase_client import firebase_db
-            firebase_db.reference(f"invernadero/{id_dispositivo}").delete()
+            firebase_db.reference(f"{settings.FIREBASE_NODO_TELEMETRIA}/{id_dispositivo}").delete()
         except Exception as fb_err:
             logger.warning("No se pudo remover nodo en Firebase para %s: %s", id_dispositivo, str(fb_err))
 

@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from core.config import settings
 from core.cultivos import (
     CULTIVO_POR_DEFECTO,
     listar_cultivos,
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ia", tags=["Inteligencia Agrícola"])
 
-RUTA_CULTIVOS_PERSONALIZADOS = "agrohub_config/cultivos_personalizados"
+RUTA_CULTIVOS_PERSONALIZADOS = settings.FIREBASE_NODO_CULTIVOS
 
 
 class CultivoCrear(BaseModel):
@@ -158,7 +159,7 @@ def solicitar_analisis_ia(
     )
 
     try:
-        firebase_db.reference(f"invernadero/{id_dispositivo}/ultimo_diagnostico_ia").set({
+        firebase_db.reference(f"{settings.FIREBASE_NODO_TELEMETRIA}/{id_dispositivo}/ultimo_diagnostico_ia").set({
             **diagnostico_ia,
             "cultivo": cultivo_efectivo,
             "timestamp": datetime.now(timezone.utc).isoformat(),

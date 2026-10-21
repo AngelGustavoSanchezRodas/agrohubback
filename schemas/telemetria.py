@@ -3,55 +3,34 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 class PayloadESP32(BaseModel):
-    """Esquema de telemetria recibido del microcontrolador ESP32 con validacion de rangos."""
+    """Esquema de telemetria recibido del microcontrolador ESP32 con validacion estricta."""
     id_dispositivo: str = Field(
         ..., 
         min_length=1,
         max_length=100,
-        description="Identificador unico del ESP32, ej: invernadero_01"
+        description="ID unico del dispositivo, ej: invernadero_01"
     )
     temperatura: float = Field(
         ..., 
         ge=-10.0, 
         le=80.0, 
-        description="Temperatura ambiente en grados Celsius"
+        description="Temperatura en °C"
     )
     humedad_ambiente: float = Field(
         ..., 
         ge=0.0, 
         le=100.0, 
-        description="Humedad relativa del aire en porcentaje"
+        description="Humedad relativa en %"
     )
     humedad_suelo: float = Field(
         ..., 
         ge=0.0, 
         le=100.0, 
-        description="Humedad del sustrato en porcentaje"
-    )
-    luz_uv: float = Field(
-        default=0.0, 
-        ge=0.0, 
-        description="Indice UV solo si existe un sensor UV. El TSL2561 no usa este campo."
-    )
-    intensidad_luz_lux: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=100000.0,
-        description="Iluminancia del TSL2561 en lux"
+        description="Humedad del sustrato en %"
     )
     estado_bomba: bool = Field(
-        default=False,
-        description="True si el Heltec tiene el rele de la bomba activado"
-    )
-    indice_calor: float | None = Field(
-        default=None, 
-        description="Indice de calor en grados Celsius (calculado o transmitido)"
-    )
-    voltaje_bateria: float | None = Field(
-        default=None, 
-        ge=0.0, 
-        le=24.0, 
-        description="Nivel de voltaje de la celda de alimentacion o bateria en voltios"
+        default=False, 
+        description="Estado del rele de riego"
     )
 
 class TelemetriaESP32(BaseModel):

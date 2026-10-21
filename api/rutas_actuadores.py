@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 import logging
 from typing import Any
 from fastapi import APIRouter, HTTPException, Query, status
@@ -6,7 +5,6 @@ from schemas.actuadores import (
     RegistroActuadorCrear,
     RegistroActuadorRespuesta,
 )
-from db.supabase_client import supabase, asegurar_dispositivo_registrado
 from db.supabase_client import supabase, asegurar_dispositivo_registrado
 
 logger = logging.getLogger(__name__)

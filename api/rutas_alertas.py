@@ -7,6 +7,7 @@ from schemas.alertas import (
     AlertaAgronomicaActualizar,
     AlertaAgronomicaRespuesta,
 )
+from core.config import settings
 from db.firebase_client import firebase_db
 from db.supabase_client import supabase, asegurar_dispositivo_registrado
 
@@ -34,7 +35,7 @@ def listar_alertas(
             consulta = consulta.eq("severidad", severidad.upper().strip())
 
         resultado = consulta.order("creado_en", desc=True).limit(limite).execute()
-        return resultado.data
+        return resultado.data or []
     except Exception as e:
         logger.error("Error al listar alertas agronomicas: %s", str(e))
         raise HTTPException(
@@ -56,7 +57,7 @@ def obtener_alertas_activas_dispositivo(id_dispositivo: str) -> list[dict[str, A
             .order("creado_en", desc=True)
             .execute()
         )
-        return resultado.data
+        return resultado.data or []
     except Exception as e:
         logger.error("Error al obtener alertas activas para %s: %s", id_dispositivo, str(e))
         raise HTTPException(
@@ -91,7 +92,7 @@ def crear_alerta(alerta: AlertaAgronomicaCrear) -> dict[str, Any]:
         alerta_guardada = resultado.data[0]
 
         try:
-            ref = firebase_db.reference(f"invernadero/{alerta.id_dispositivo}/ultima_alerta")
+            ref = firebase_db.reference(f"{settings.FIREBASE_NODO_TELEMETRIA}/{alerta.id_dispositivo}/ultima_alerta")
             ref.set({
                 "id_alerta": alerta_guardada.get("id"),
                 "tipo_riesgo": alerta.tipo_riesgo,
@@ -139,7 +140,7 @@ def resolver_alerta(id_alerta: int) -> dict[str, Any]:
         id_dispositivo = alerta_resuelta.get("id_dispositivo")
         if id_dispositivo:
             try:
-                ref = firebase_db.reference(f"invernadero/{id_dispositivo}/ultima_alerta")
+                ref = firebase_db.reference(f"{settings.FIREBASE_NODO_TELEMETRIA}/{id_dispositivo}/ultima_alerta")
                 ref.update({"estado": "RESUELTA", "resuelta_en": timestamp_resolucion})
             except Exception as fb_err:
                 logger.warning("No se pudo actualizar estado en Firebase: %s", str(fb_err))
@@ -187,7 +188,7 @@ def actualizar_alerta(id_alerta: int, datos: AlertaAgronomicaActualizar) -> dict
         id_dispositivo = alerta_actualizada.get("id_dispositivo")
         if id_dispositivo:
             try:
-                ref = firebase_db.reference(f"invernadero/{id_dispositivo}/ultima_alerta")
+                ref = firebase_db.reference(f"{settings.FIREBASE_NODO_TELEMETRIA}/{id_dispositivo}/ultima_alerta")
                 alerta_fb = ref.get()
                 if isinstance(alerta_fb, dict) and (
                     alerta_fb.get("id_alerta") == id_alerta

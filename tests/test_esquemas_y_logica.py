@@ -5,8 +5,8 @@ from schemas.dispositivos import DispositivoCrear, DispositivoActualizar, Dispos
 from schemas.alertas import AlertaAgronomicaCrear, AlertaAgronomicaRespuesta
 from schemas.actuadores import RegistroActuadorCrear, RegistroActuadorRespuesta
 from datetime import datetime
-from zoneinfo import ZoneInfo
-from api.rutas_sensores import calcular_indice_calor, es_horario_diurno
+from fastapi import HTTPException
+from api.rutas_sensores import calcular_indice_calor, es_horario_diurno, ZONA_INVERNADERO
 from core.puente_firebase import lectura_desde_estado, numero_finito
 from core.data_service import formatear_datos_para_ia
 from core.security import verificar_api_key
@@ -32,31 +32,23 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertEqual(payload.temperatura, 24.5)
         self.assertEqual(payload.humedad_ambiente, 60.0)
         self.assertEqual(payload.humedad_suelo, 45.0)
-        self.assertEqual(payload.luz_uv, 0.0)
-        self.assertEqual(payload.intensidad_luz_lux, 0.0)
         self.assertFalse(payload.estado_bomba)
-        self.assertIsNone(payload.indice_calor)
-        self.assertIsNone(payload.voltaje_bateria)
 
     def test_payload_esp32_campos_completos(self) -> None:
-        """Verifica que PayloadESP32 admita todos los campos correspondientes a telemetria_historica."""
+        """Verifica que PayloadESP32 admita exactamente los campos del hardware del invernadero."""
         datos = {
             "id_dispositivo": "nodo_sensor_02",
             "temperatura": 28.0,
             "humedad_ambiente": 75.0,
             "humedad_suelo": 52.3,
-            "luz_uv": 4.5,
-            "intensidad_luz_lux": 12500,
             "estado_bomba": True,
-            "indice_calor": 30.1,
-            "voltaje_bateria": 3.85,
         }
         payload = PayloadESP32(**datos)
-        self.assertEqual(payload.luz_uv, 4.5)
-        self.assertEqual(payload.intensidad_luz_lux, 12500)
+        self.assertEqual(payload.id_dispositivo, "nodo_sensor_02")
+        self.assertEqual(payload.temperatura, 28.0)
+        self.assertEqual(payload.humedad_ambiente, 75.0)
+        self.assertEqual(payload.humedad_suelo, 52.3)
         self.assertTrue(payload.estado_bomba)
-        self.assertEqual(payload.indice_calor, 30.1)
-        self.assertEqual(payload.voltaje_bateria, 3.85)
 
     def test_lectura_firebase_descarta_nan_del_dht22(self) -> None:
         """Una lectura NaN del DHT22 no debe entrar al historial."""
@@ -68,33 +60,34 @@ class TestEsquemasYLogica(unittest.TestCase):
         }))
 
     def test_lectura_firebase_ajusta_suelo_al_rango_valido(self) -> None:
-        """El mapeo ADC del Heltec puede salir de 0 a 100. El contrato lo recorta."""
+        """El mapeo ADC del microcontrolador puede salir de 0 a 100. El contrato lo recorta."""
         payload = lectura_desde_estado("invernadero_prueba_01", {
             "temperatura": 24.0,
             "humedad_ambiente": 60.0,
             "humedad_suelo": 140.0,
-            "intensidad_luz_lux": 106.0,
             "estado_bomba": True,
         })
         self.assertIsNotNone(payload)
         assert payload is not None
         self.assertEqual(payload.humedad_suelo, 100.0)
-        self.assertEqual(payload.intensidad_luz_lux, 106.0)
         self.assertTrue(payload.estado_bomba)
 
     def test_horario_diurno_para_alerta_de_luz(self) -> None:
         """La alerta de poca luz del TSL2561 solo corresponde al horario diurno local."""
-        from api.rutas_sensores import ZONA_INVERNADERO
         self.assertTrue(es_horario_diurno(datetime(2026, 10, 19, 10, 0, tzinfo=ZONA_INVERNADERO)))
         self.assertFalse(es_horario_diurno(datetime(2026, 10, 19, 22, 0, tzinfo=ZONA_INVERNADERO)))
 
     def test_calculo_indice_calor(self) -> None:
         """Verifica el calculo del indice de calor con algoritmos meteorologicos estandar."""
-        # Temperaturas bajas se mantienen constantes
+        # Temperaturas menores a 26.7 C retornan la misma temperatura
         self.assertEqual(calcular_indice_calor(18.0, 50.0), 18.0)
-        # Temperatura y humedad alta incrementan la sensacion termica
+        self.assertEqual(calcular_indice_calor(26.6, 60.0), 26.6)
+        # Temperatura mayor o igual a 26.7 C y humedad alta incrementan la sensacion termica
         indice_calor = calcular_indice_calor(30.0, 70.0)
         self.assertGreater(indice_calor, 30.0)
+        # Verificacion con paso de parametros nombrados
+        indice_kw = calcular_indice_calor(temperatura_c=30.0, humedad=70.0)
+        self.assertEqual(indice_calor, indice_kw)
 
     def test_formateo_datos_para_ia(self) -> None:
         """Verifica que el servicio de datos calcule promedios y genere el resumen temporal para Gemini."""
@@ -166,10 +159,10 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertEqual(payload.humedad_ambiente, 60.0)
         self.assertEqual(payload.humedad_suelo, 45.0)
         self.assertFalse(payload.estado_bomba)
-        self.assertNotIn("intensidad_luz_lux", payload.model_fields_set)
+        self.assertFalse(hasattr(payload, "intensidad_luz_lux"))
 
     def test_middleware_comunicacion_frontend_api_key(self) -> None:
-        """Verifica que el middleware proteja la comunicacion con el frontend exigiendo X-API-Key."""
+        """Verifica que el middleware proteja la comunicacion exigiendo estrictamente X-API-Key sin bypass."""
         # 1. Rutas publicas funcionan sin cabecera
         res_root = self.client.get("/")
         self.assertEqual(res_root.status_code, 200)
@@ -178,16 +171,28 @@ class TestEsquemasYLogica(unittest.TestCase):
         res_sin_key = self.client.get("/api/historial")
         self.assertEqual(res_sin_key.status_code, 403)
 
-        # 3. Rutas del frontend con X-API-Key autorizada se ejecutan con exito
+        # 3. Intentos de bypass mediante spoofing de cabecera Origin son rechazados con 403
+        res_spoof = self.client.get("/api/historial", headers={"Origin": "http://localhost:3000"})
+        self.assertEqual(res_spoof.status_code, 403)
+
+        # 4. Claves obsoletas o quemadas son denegadas con 403
+        res_clave_quemada = self.client.get(
+            "/api/historial", 
+            headers={settings.API_KEY_NOMBRE: "clave_estatica_agrohub_123"}
+        )
+        self.assertEqual(res_clave_quemada.status_code, 403)
+
+        # 5. Rutas con X-API-Key autorizada de configuracion se ejecutan con exito
         headers = {settings.API_KEY_NOMBRE: settings.API_KEY_SECRETA}
         res_con_key = self.client.get("/api/historial", headers=headers)
         self.assertEqual(res_con_key.status_code, 200)
 
     def test_rutas_registradas_fastapi(self) -> None:
-        """Verifica que las rutas activas de consulta, IA y actuadores esten registradas y la ingesta HTTP directa haya sido removida en favor de Firebase."""
+        """Verifica que las rutas activas de consulta, sincronizacion, IA y actuadores esten registradas."""
         rutas = list(app.openapi()["paths"].keys())
         self.assertNotIn("/api/telemetria/ingesta", rutas)
         self.assertNotIn("/api/telemetria", rutas)
+        self.assertIn("/api/telemetria/sincronizar", rutas)
         self.assertIn("/api/telemetria/historial/{id_dispositivo}", rutas)
         self.assertIn("/api/telemetria/historial", rutas)
         self.assertIn("/api/ia/diagnostico/{id_dispositivo}", rutas)
@@ -205,6 +210,19 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertNotIn("/api/control/bomba", rutas)
         self.assertNotIn("/api/control/actuador", rutas)
         self.assertNotIn("/api/control/historial", rutas)
+
+    def test_endpoint_sincronizar_telemetria_validacion(self) -> None:
+        """Verifica que el endpoint /api/telemetria/sincronizar valide estrictamente el esquema PayloadESP32."""
+        headers = {settings.API_KEY_NOMBRE: settings.API_KEY_SECRETA}
+        # Carga invalida con temperatura fuera de rango permitido (-10 a 80 C)
+        payload_invalido = {
+            "id_dispositivo": "invernadero_01",
+            "temperatura": 120.0,
+            "humedad_ambiente": 60.0,
+            "humedad_suelo": 45.0,
+        }
+        res = self.client.post("/api/telemetria/sincronizar", json=payload_invalido, headers=headers)
+        self.assertEqual(res.status_code, 422)
 
     def test_diagnostico_agronomico_esquema(self) -> None:
         """Verifica la validacion del esquema DiagnosticoAgronomico usando Pydantic."""
@@ -240,6 +258,107 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertIn("estado_general", resultado)
         self.assertIn("riesgo_detectado", resultado)
         self.assertIn("recomendacion_tecnica", resultado)
+
+    def test_procesar_nueva_telemetria_data_nula(self) -> None:
+        """Verifica que el callback del listener de Firebase descarte eventos con datos nulos."""
+        from core.puente_firebase import procesar_nueva_telemetria
+        class MockEvent:
+            data = None
+            path = "/"
+        # No debe lanzar ninguna excepcion
+        procesar_nueva_telemetria(MockEvent())
+
+    def test_procesar_nueva_telemetria_datos_invalidos(self) -> None:
+        """Verifica que el callback del listener capture y maneje errores de validacion sin detener el servidor."""
+        from core.puente_firebase import procesar_nueva_telemetria
+        class MockEvent:
+            data = {
+                "id_dispositivo": "invernadero_err_01",
+                "temperatura": "valor_no_numerico",
+            }
+            path = "/"
+        # Debe capturar el error y no propagar excepcion no controlada
+        procesar_nueva_telemetria(MockEvent())
+
+    def test_esquema_telemetria_historica_y_extendida(self) -> None:
+        """Verifica los esquemas de persistencia historica y respuestas detalladas de sensores."""
+        telemetria = TelemetriaESP32(
+            id_dispositivo="invernadero_01",
+            temperatura=25.0,
+            humedad_ambiente=65.0,
+            humedad_suelo=50.0,
+            luz_uv=1.2,
+            intensidad_luz_lux=15000.0,
+            estado_bomba=True,
+            indice_calor=25.5,
+            voltaje_bateria=3.7,
+        )
+        self.assertEqual(telemetria.id_dispositivo, "invernadero_01")
+        self.assertEqual(telemetria.intensidad_luz_lux, 15000.0)
+        self.assertEqual(telemetria.voltaje_bateria, 3.7)
+
+        lectura = TelemetriaLecturaRespuesta(
+            id=101,
+            id_dispositivo="invernadero_01",
+            temperatura=25.0,
+            humedad_ambiente=65.0,
+            humedad_suelo=50.0,
+            luz_uv=1.2,
+            intensidad_luz_lux=15000.0,
+            estado_bomba=True,
+            indice_calor=25.5,
+            voltaje_bateria=3.7,
+            creado_en="2026-10-21T10:00:00Z",
+        )
+        self.assertEqual(lectura.id, 101)
+        self.assertEqual(lectura.creado_en, "2026-10-21T10:00:00Z")
+
+    def test_esquemas_respuesta_modelos_relacionales(self) -> None:
+        """Verifica que los modelos de respuesta de dispositivos, alertas y actuadores validen correctamente."""
+        disp_resp = DispositivoRespuesta(
+            id_dispositivo="invernadero_01",
+            nombre="Modulo Central",
+            ubicacion="Seccion A",
+            fecha_instalacion="2026-10-20T08:00:00Z",
+            estado_conexion="ACTIVO",
+            cultivo="Tomate",
+        )
+        self.assertEqual(disp_resp.id_dispositivo, "invernadero_01")
+        self.assertEqual(disp_resp.cultivo, "Tomate")
+
+        alerta_resp = AlertaAgronomicaRespuesta(
+            id=1,
+            id_dispositivo="invernadero_01",
+            tipo_riesgo="ESTRES_HIDRICO",
+            severidad="ALTA",
+            mensaje_diagnostico="Riego urgente requerido",
+            estado="ACTIVA",
+            creado_en="2026-10-21T09:00:00Z",
+        )
+        self.assertEqual(alerta_resp.id, 1)
+        self.assertIsNone(alerta_resp.resuelta_en)
+
+        actuador_resp = RegistroActuadorRespuesta(
+            id=5,
+            id_dispositivo="invernadero_01",
+            actuador="BOMBA",
+            accion="ENCENDIDO",
+            origen="ESP32_AUTO",
+            creado_en="2026-10-21T09:05:00Z",
+        )
+        self.assertEqual(actuador_resp.id, 5)
+        self.assertEqual(actuador_resp.actuador, "BOMBA")
+
+    def test_funcion_verificar_api_key_directa(self) -> None:
+        """Verifica el comportamiento de la funcion de seguridad verificar_api_key."""
+        # Clave autorizada retorna la misma clave
+        clave_valida = settings.API_KEY_SECRETA
+        self.assertEqual(verificar_api_key(clave_valida), clave_valida)
+
+        # Clave invalida genera HTTPException con codigo 403
+        with self.assertRaises(HTTPException) as ctx:
+            verificar_api_key("clave_no_autorizada_invalida")
+        self.assertEqual(ctx.exception.status_code, 403)
 
 if __name__ == "__main__":
     unittest.main()

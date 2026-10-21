@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from typing import Any
 from fastapi import FastAPI, HTTPException, Request, status
@@ -8,7 +9,10 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from core.config import settings
 from core.ia_scheduler import ciclo_programado_ia
-from core.puente_firebase import ciclo_puente_firebase
+from core.puente_firebase import (
+    iniciar_listener_firebase,
+    cerrar_listener_firebase,
+)
 from api import (
     rutas_sensores,
     rutas_ia,
@@ -23,23 +27,33 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """
     Gestion del ciclo de vida de la aplicacion:
-    Inicia la tarea en segundo plano del programador de IA al arrancar
-    y asegura una cancelacion limpia al apagar el servidor.
+    Inicia la tarea en segundo plano del programador de IA al arrancar,
+    inicia la escucha en tiempo real de Firebase con el metodo listen()
+    y asegura un apagado ordenado y limpio al detener el servidor.
     """
     tarea_scheduler: asyncio.Task[None] | None = None
-    tarea_puente: asyncio.Task[None] | None = None
+    listener_firebase: Any = None
+
     if settings.IA_SCHEDULER_HABILITADO:
         tarea_scheduler = asyncio.create_task(ciclo_programado_ia())
+
     if settings.PUENTE_FIREBASE_HABILITADO:
-        tarea_puente = asyncio.create_task(ciclo_puente_firebase())
+        logger.info("Iniciando conexion con Firebase Realtime Database...")
+        listener_firebase = iniciar_listener_firebase()
+
     yield
-    for tarea in (tarea_scheduler, tarea_puente):
-        if tarea:
-            tarea.cancel()
-            try:
-                await tarea
-            except asyncio.CancelledError:
-                pass
+
+    # Acciones al apagar el servidor
+    if listener_firebase is not None:
+        logger.info("Cerrando listener de Firebase...")
+        cerrar_listener_firebase()
+
+    if tarea_scheduler is not None:
+        tarea_scheduler.cancel()
+        try:
+            await tarea_scheduler
+        except asyncio.CancelledError:
+            pass
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -72,10 +86,35 @@ def custom_openapi() -> dict[str, Any]:
 
 app.openapi = custom_openapi
 
+def obtener_origenes_cors(frontend_url_raw: str) -> list[str]:
+    """
+    Construye la lista estricta de origenes permitidos para CORS a partir de FRONTEND_URL.
+    Permite entornos de desarrollo local y los dominios configurados en produccion.
+    """
+    origenes: set[str] = set()
+    for entrada in frontend_url_raw.split(","):
+        limpio = entrada.strip().rstrip("/")
+        if not limpio:
+            continue
+        if limpio.startswith("http://") or limpio.startswith("https://"):
+            origenes.add(limpio)
+        else:
+            origenes.add(f"https://{limpio}")
+            origenes.add(f"http://{limpio}")
+
+    # Entornos locales de desarrollo
+    origenes.update([
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ])
+    return sorted(list(origenes))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=obtener_origenes_cors(settings.FRONTEND_URL),
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -107,34 +146,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
         },
     )
 
-def es_origen_web_autorizado(request: Request) -> bool:
-    """
-    Verifica si la solicitud HTTP proviene de un origen web confiable del Frontend
-    (entornos de desarrollo local o dominios autorizados en FRONTEND_URL).
-    """
-    origen = (request.headers.get("origin") or "").strip().lower()
-    referer = (request.headers.get("referer") or "").strip().lower()
-    fuente = origen or referer
-    if not fuente:
-        return False
-
-    # Entornos locales de desarrollo (localhost / 127.0.0.1)
-    if any(local in fuente for local in ("localhost", "127.0.0.1")):
-        return True
-
-    # Dominios de produccion autorizados
-    dominios_permitidos = [
-        d.strip().lower().replace("https://", "").replace("http://", "").rstrip("/")
-        for d in settings.FRONTEND_URL.split(",")
-        if d.strip()
-    ]
-    for dominio in dominios_permitidos:
-        if dominio and dominio in fuente:
-            return True
-
-    return False
-
-# Middleware de seguridad: comunicacion segura entre back y front mediante API_KEY u origen autorizado
+# Middleware de seguridad: comunicacion segura entre front y back mediante X-API-Key obligatoria
 @app.middleware("http")
 async def verificar_api_key_middleware(request: Request, call_next):
     # Permitir consultas preflight CORS
@@ -152,37 +164,27 @@ async def verificar_api_key_middleware(request: Request, call_next):
     if ruta_normalizada in rutas_excluidas:
         return await call_next(request)
 
-    # 1. Permitir peticiones provenientes del Frontend autorizado (CORS/Web)
-    if es_origen_web_autorizado(request):
-        return await call_next(request)
-
-    # 2. Validar API_KEY en solicitudes de clientes directos o herramientas externas
-    claves_validas = {
-        settings.API_KEY_SECRETA.strip(),
-        "clave_estatica_agrohub_123",
-        "9e4b631e8f3a04c497ae0dce7c667b47a511a805e9b3d86af8051a597829045c",
-    }
+    # Validacion estricta de API_KEY en cabecera mediante comparacion en tiempo constante
     clave_recibida = (request.headers.get(settings.API_KEY_NOMBRE) or "").strip()
+    clave_esperada = settings.API_KEY_SECRETA.strip()
 
-    if clave_recibida and clave_recibida in claves_validas:
-        return await call_next(request)
+    if not clave_recibida or not clave_esperada or not secrets.compare_digest(clave_recibida, clave_esperada):
+        logger.warning(
+            "Rechazo 403 en %s. Cabecera '%s' invalida o ausente.",
+            request.url.path,
+            settings.API_KEY_NOMBRE,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={
+                "status": "error",
+                "codigo": status.HTTP_403_FORBIDDEN,
+                "detail": f"Acceso denegado: Se requiere una cabecera '{settings.API_KEY_NOMBRE}' valida.",
+                "ruta": request.url.path,
+            },
+        )
 
-    logger.warning(
-        "Rechazo 403 en %s. Origen no autorizado y cabecera '%s' invalida o ausente.",
-        request.url.path,
-        settings.API_KEY_NOMBRE,
-    )
-    return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        headers={"Access-Control-Allow-Origin": "*"},
-        content={
-            "status": "error",
-            "codigo": status.HTTP_403_FORBIDDEN,
-            "detail": f"Acceso denegado: Se requiere una cabecera '{settings.API_KEY_NOMBRE}' valida o un origen web autorizado.",
-            "ayuda": "Incluya la cabecera 'X-API-Key' en su solicitud HTTP o acceda desde el dashboard frontend autorizado.",
-            "ruta": request.url.path,
-        },
-    )
+    return await call_next(request)
 
 app.include_router(rutas_sensores.router)
 app.include_router(rutas_ia.router)
@@ -208,4 +210,5 @@ def estado_api() -> dict[str, str]:
         "servicio": settings.PROJECT_NAME,
         "version": "2.1.0",
         "modo_ia": "hibrido (bajo demanda y programado)",
+        "listener_firebase": "activo" if settings.PUENTE_FIREBASE_HABILITADO else "inactivo",
     }

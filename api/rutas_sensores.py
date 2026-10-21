@@ -4,6 +4,7 @@ import logging
 from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from schemas.telemetria import PayloadESP32
+from core.config import settings
 from db.firebase_client import firebase_db
 from db.supabase_client import supabase, asegurar_dispositivo_registrado
 from core.data_service import obtener_historial_reciente, obtener_historial_general
@@ -16,7 +17,6 @@ router = APIRouter(prefix="/api/telemetria", tags=["Sensores"])
 # Con seco=3000 y mojado=1200, ese punto equivale a 55.6 % de humedad.
 UMBRAL_HUMEDAD_SUELO_ENCENDIDO = 55.6
 UMBRAL_HUMEDAD_SUELO_APAGADO = 55.6
-UMBRAL_LUZ_BAJA_LUX = 1000.0
 try:
     ZONA_INVERNADERO = ZoneInfo("America/Guatemala")
 except Exception:
@@ -24,33 +24,34 @@ except Exception:
 HORA_INICIO_DIA = 6
 HORA_FIN_DIA = 18
 
-def calcular_indice_calor(temperatura_c: float, humedad_relativa: float) -> float:
+def calcular_indice_calor(temperatura_c: float, humedad: float) -> float:
     """
     Calcula el indice de calor en grados Celsius a partir de la temperatura ambiente
-    y la humedad relativa mediante el algoritmo estandar de regresion meteorologica de Rothfusz.
+    y la humedad relativa mediante la formula de regresion meteorologica de Rothfusz.
+    Si la temperatura es menor a 26.7 C (80 F), el riesgo de calor extremo es nulo.
     """
-    if temperatura_c < 20.0 or humedad_relativa < 40.0:
+    # Convertir a Fahrenheit para la ecuacion base
+    t_f = (temperatura_c * 9.0 / 5.0) + 32.0
+
+    # Si la temperatura es menor a 26.7 C (80 F), el riesgo de calor extremo es nulo
+    if temperatura_c < 26.7:
         return round(temperatura_c, 2)
 
-    tf = (temperatura_c * 9.0 / 5.0) + 32.0
-    rh = humedad_relativa
+    # Formula de Rothfusz para indice de calor
+    hi = (
+        -42.379
+        + 2.04901523 * t_f
+        + 10.14333127 * humedad
+        - 0.22475541 * t_f * humedad
+        - 0.00683783 * (t_f ** 2)
+        - 0.05481717 * (humedad ** 2)
+        + 0.00122874 * (t_f ** 2) * humedad
+        + 0.00085282 * t_f * (humedad ** 2)
+        - 0.00000199 * (t_f ** 2) * (humedad ** 2)
+    )
 
-    hi_f = 0.5 * (tf + 61.0 + ((tf - 68.0) * 1.2) + (rh * 0.094))
-
-    if (hi_f + tf) / 2.0 >= 80.0:
-        hi_f = (
-            -42.379
-            + 2.04901523 * tf
-            + 10.14333127 * rh
-            - 0.22475541 * tf * rh
-            - 0.00683783 * (tf ** 2)
-            - 0.05481717 * (rh ** 2)
-            + 0.00122874 * (tf ** 2) * rh
-            + 0.00085282 * tf * (rh ** 2)
-            - 0.00000199 * (tf ** 2) * (rh ** 2)
-        )
-
-    hi_c = (hi_f - 32.0) * 5.0 / 9.0
+    # Retornar convertido nuevamente a Celsius
+    hi_c = (hi - 32.0) * 5.0 / 9.0
     return round(hi_c, 2)
 
 def es_horario_diurno(momento: datetime | None = None) -> bool:
@@ -71,7 +72,7 @@ def resolver_alerta_activa(id_dispositivo: str, tipo_riesgo: str) -> None:
     }).eq("id_dispositivo", id_dispositivo).eq("tipo_riesgo", tipo_riesgo).eq("estado", "ACTIVA").execute()
 
     try:
-        ref_alerta = firebase_db.reference(f"invernadero/{id_dispositivo}/ultima_alerta")
+        ref_alerta = firebase_db.reference(f"{settings.FIREBASE_NODO_TELEMETRIA}/{id_dispositivo}/ultima_alerta")
         alerta_fb = ref_alerta.get()
         if isinstance(alerta_fb, dict) and alerta_fb.get("tipo_riesgo") == tipo_riesgo:
             ref_alerta.update({
@@ -136,32 +137,6 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
         except Exception as err_resolver:
             logger.error("Error al resolver proliferacion de hongos: %s", str(err_resolver))
 
-    # El hardware usa TSL2561 (lux). luz_uv queda fuera de las alertas automaticas.
-    if "intensidad_luz_lux" in payload.model_fields_set:
-        if es_horario_diurno() and payload.intensidad_luz_lux < UMBRAL_LUZ_BAJA_LUX:
-            alertas_detectadas.append((
-                "LUZ_INSUFICIENTE",
-                "MEDIA",
-                f"Iluminancia de {payload.intensidad_luz_lux:.0f} lux durante el dia, por debajo de {UMBRAL_LUZ_BAJA_LUX:.0f} lux.",
-            ))
-        else:
-            try:
-                resolver_alerta_activa(payload.id_dispositivo, "LUZ_INSUFICIENTE")
-            except Exception as err_resolver:
-                logger.error("Error al resolver luz insuficiente: %s", str(err_resolver))
-
-    if payload.voltaje_bateria is not None and payload.voltaje_bateria < 3.3:
-        alertas_detectadas.append((
-            "BATERIA_BAJA",
-            "MEDIA",
-            f"Voltaje de celda bajo ({payload.voltaje_bateria} V). Se recomienda recarga inminente.",
-        ))
-    elif payload.voltaje_bateria is not None:
-        try:
-            resolver_alerta_activa(payload.id_dispositivo, "BATERIA_BAJA")
-        except Exception as err_resolver:
-            logger.error("Error al resolver bateria baja: %s", str(err_resolver))
-
     timestamp_actual = datetime.now(timezone.utc).isoformat()
 
     for tipo_riesgo, severidad, mensaje in alertas_detectadas:
@@ -184,7 +159,7 @@ def evaluar_alertas_automaticas(payload: PayloadESP32, indice_calor: float) -> N
                     "estado": "ACTIVA",
                 }).execute()
 
-                ref_alerta = firebase_db.reference(f"invernadero/{payload.id_dispositivo}/ultima_alerta")
+                ref_alerta = firebase_db.reference(f"{settings.FIREBASE_NODO_TELEMETRIA}/{payload.id_dispositivo}/ultima_alerta")
                 ref_alerta.set({
                     "tipo_riesgo": tipo_riesgo,
                     "severidad": severidad,
@@ -224,3 +199,50 @@ def obtener_historial_general_endpoint(limite: int = 50) -> dict[str, Any]:
         "total_registros": len(datos),
         "datos": datos,
     }
+
+@router.post("/sincronizar", tags=["Sensores"])
+async def sincronizar_firebase_a_supabase(payload: PayloadESP32) -> dict[str, Any]:
+    """
+    Sincroniza y persiste telemetria del ESP32 en la tabla telemetria_historica de Supabase.
+    Calcula el indice de calor agronomico y registra el historial.
+    """
+    try:
+        asegurar_dispositivo_registrado(payload.id_dispositivo)
+
+        # 1. Calcular campos derivados (El indice de calor no viene del ESP32)
+        indice_calculado = calcular_indice_calor(
+            temperatura_c=payload.temperatura, 
+            humedad=payload.humedad_ambiente
+        )
+        
+        # 2. Estructurar el diccionario exacto para la nueva tabla telemetria_historica
+        datos_insercion = {
+            "id_dispositivo": payload.id_dispositivo,
+            "temperatura": payload.temperatura,
+            "humedad_ambiente": payload.humedad_ambiente,
+            "humedad_suelo": payload.humedad_suelo,
+            "estado_bomba": payload.estado_bomba,
+            "indice_calor": indice_calculado
+        }
+        
+        # 3. Guardar en Supabase
+        respuesta = supabase.table("telemetria_historica").insert(datos_insercion).execute()
+
+        # 4. Evaluar alertas automaticas agronomicas
+        evaluar_alertas_automaticas(payload, indice_calculado)
+        
+        return {
+            "mensaje": "Historial sincronizado exitosamente",
+            "indice_calor_registrado": indice_calculado,
+            "data": respuesta.data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Manejo de errores si falla la conexion a Supabase o la validacion
+        logger.error("Error persistiendo datos en Supabase: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Error persistiendo datos en Supabase: {str(e)}"
+        )

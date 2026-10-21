@@ -74,7 +74,7 @@ def ejecutar_barrido_diagnostico_ia() -> dict[str, Any]:
                 total_alertas += 1
 
             try:
-                ref = firebase_db.reference(f"invernadero/{id_disp}/ultimo_diagnostico_ia")
+                ref = firebase_db.reference(f"{settings.FIREBASE_NODO_TELEMETRIA}/{id_disp}/ultimo_diagnostico_ia")
                 ref.set({
                     **diagnostico_ia,
                     "cultivo": cultivo,
