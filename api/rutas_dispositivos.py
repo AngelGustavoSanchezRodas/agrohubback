@@ -89,6 +89,9 @@ def registrar_dispositivo(datos: DispositivoCrear) -> dict[str, Any]:
             "estado_conexion": datos.estado_conexion,
             "cultivo": normalizar_cultivo(datos.cultivo),
         }
+        if datos.id_invernadero is not None:
+            payload_db["id_invernadero"] = datos.id_invernadero
+
         resultado = supabase.table("dispositivos").insert(payload_db).execute()
         if not resultado.data:
             raise HTTPException(
@@ -120,6 +123,8 @@ def actualizar_dispositivo(id_dispositivo: str, datos: DispositivoActualizar) ->
             payload_actualizacion["estado_conexion"] = datos.estado_conexion
         if datos.cultivo is not None:
             payload_actualizacion["cultivo"] = normalizar_cultivo(datos.cultivo)
+        if datos.id_invernadero is not None:
+            payload_actualizacion["id_invernadero"] = datos.id_invernadero
 
         if not payload_actualizacion:
             raise HTTPException(

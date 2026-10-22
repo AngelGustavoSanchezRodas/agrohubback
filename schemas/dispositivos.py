@@ -30,6 +30,10 @@ class DispositivoBase(BaseModel):
         max_length=80,
         description="Cultivo o planta asignada al invernadero para el diagnostico con IA",
     )
+    id_invernadero: int | str | None = Field(
+        default=None,
+        description="Identificador del invernadero fisico asociado",
+    )
 
 class DispositivoCrear(DispositivoBase):
     """Esquema para el registro formal de un nuevo dispositivo."""
@@ -58,6 +62,10 @@ class DispositivoActualizar(BaseModel):
         max_length=80,
         description="Cultivo o planta asignada al invernadero",
     )
+    id_invernadero: int | str | None = Field(
+        default=None,
+        description="Nuevo identificador del invernadero fisico asociado",
+    )
 
 class DispositivoRespuesta(BaseModel):
     """Esquema de respuesta detallado con datos de persistencia del dispositivo."""
@@ -70,3 +78,7 @@ class DispositivoRespuesta(BaseModel):
     )
     estado_conexion: str = Field(default="INACTIVO", description="Estado de conexion actual")
     cultivo: str | None = Field(default="Tomate", description="Cultivo asignado para diagnostico IA")
+    id_invernadero: int | str | None = Field(
+        default=None,
+        description="Identificador del invernadero fisico asociado",
+    )

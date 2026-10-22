@@ -90,15 +90,22 @@ def _clasificar_error_ia(error: Exception | None) -> tuple[str, str]:
     )
 
 
-def analizar_condiciones_agricolas(
-    resumen_historico: str,
-    cultivo: str = "Tomate",
-) -> dict[str, str]:
+from core.data_service import obtener_contexto_invernadero
+from db.supabase_client import supabase
+
+__all__ = [
+    "obtener_contexto_invernadero",
+    "analizar_condiciones",
+    "analizar_condiciones_agricolas",
+    "DiagnosticoAgronomico",
+]
+
+
+def _ejecutar_diagnostico_gemini(prompt: str) -> dict[str, str]:
     """
-    Analiza el resumen temporal de telemetria respecto al perfil del cultivo
-    usando Google GenAI con salida estructurada.
+    Ejecuta la inferencia contra Google GenAI asegurando una respuesta estructurada
+    segun el esquema DiagnosticoAgronomico y gestionando contingencias o modelos alternativos.
     """
-    cultivo_norm = normalizar_cultivo(cultivo)
     clave_activa = (os.environ.get("GEMINI_API_KEY") or GEMINI_API_KEY).strip()
     if not client or not clave_activa:
         logger.warning("GEMINI_API_KEY no esta configurada en el entorno.")
@@ -109,23 +116,6 @@ def analizar_condiciones_agricolas(
             "evaluacion_luz": "Sin evaluacion: falta configurar GEMINI_API_KEY.",
             "recomendacion_tecnica": "Configure la variable GEMINI_API_KEY en el entorno para habilitar analisis inteligente.",
         }
-
-    perfil = texto_perfil_para_prompt(cultivo_norm)
-    prompt = f"""
-Eres un ingeniero agronomo. Debes diagnosticar un invernadero escolar segun el cultivo elegido.
-
-{perfil}
-
-Telemetria reciente del invernadero:
-{resumen_historico}
-
-Instrucciones:
-1. Compara temperatura, humedad del aire, humedad del suelo e iluminancia con los rangos del cultivo.
-2. Indica si hay exceso o falta de humedad (aire y/o suelo) y de luz.
-3. Detecta riesgos tipicos (hongos, estres hidrico, calor, poca luz diurna, etc.) o NINGUNO.
-4. Da recomendaciones concretas y accionables: riego, ventilacion, sombra, iluminacion o monitoreo.
-5. Se breve y profesional. No inventes sensores que no aparecen en la telemetria.
-"""
 
     modelo_configurado = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash")
     candidatos = [
@@ -187,3 +177,67 @@ Instrucciones:
         "evaluacion_luz": "No disponible por fallo del servicio de IA.",
         "recomendacion_tecnica": recomendacion,
     }
+
+
+def analizar_condiciones(
+    id_dispositivo: str,
+    resumen_telemetria: str,
+    cultivo_override: str | None = None,
+) -> dict[str, str]:
+    """
+    Evalua el entorno productivo de un dispositivo combinando el contexto fisico
+    del invernadero en Supabase con el historial microclimatico reciente.
+    """
+    contexto = obtener_contexto_invernadero(id_dispositivo)
+
+    cultivo = (
+        cultivo_override
+        or contexto.get("tipo_cultivo")
+        or "Cultivo no especificado"
+    )
+    ubicacion = contexto.get("ubicacion") or "Ubicación desconocida"
+    area = contexto.get("area_m2") or "Área no definida"
+
+    prompt = f"""
+Eres un ingeniero agrónomo experto. Evalúa el siguiente entorno productivo:
+
+CONTEXTO FÍSICO:
+- Cultivo: {cultivo}
+- Ubicación: {ubicacion}
+- Área de producción: {area} m2
+
+HISTORIAL MICROCLIMÁTICO (24h):
+{resumen_telemetria}
+
+Considerando el clima típico de {ubicacion}, genera un diagnóstico de riesgos y recomendaciones específicas para el cultivo de {cultivo}.
+"""
+    return _ejecutar_diagnostico_gemini(prompt)
+
+
+def analizar_condiciones_agricolas(
+    resumen_historico: str,
+    cultivo: str = "Tomate",
+) -> dict[str, str]:
+    """
+    Analiza el resumen temporal de telemetria respecto al perfil del cultivo
+    usando Google GenAI con salida estructurada.
+    """
+    cultivo_norm = normalizar_cultivo(cultivo)
+    perfil = texto_perfil_para_prompt(cultivo_norm)
+    prompt = f"""
+Eres un ingeniero agronomo. Debes diagnosticar un invernadero escolar segun el cultivo elegido.
+
+{perfil}
+
+Telemetria reciente del invernadero:
+{resumen_historico}
+
+Instrucciones:
+1. Compara temperatura, humedad del aire, humedad del suelo e iluminancia con los rangos del cultivo.
+2. Indica si hay exceso o falta de humedad (aire y/o suelo) y de luz.
+3. Detecta riesgos tipicos (hongos, estres hidrico, calor, poca luz diurna, etc.) o NINGUNO.
+4. Da recomendaciones concretas y accionables: riego, ventilacion, sombra, iluminacion o monitoreo.
+5. Se breve y profesional. No inventes sensores que no aparecen en la telemetria.
+"""
+    return _ejecutar_diagnostico_gemini(prompt)
+

@@ -360,5 +360,46 @@ class TestEsquemasYLogica(unittest.TestCase):
             verificar_api_key("clave_no_autorizada_invalida")
         self.assertEqual(ctx.exception.status_code, 403)
 
+    def test_obtener_contexto_invernadero_tipo_retorno(self) -> None:
+        """Verifica que obtener_contexto_invernadero siempre retorne un diccionario valido."""
+        from core.data_service import obtener_contexto_invernadero
+        contexto = obtener_contexto_invernadero("dispositivo_inexistente_999")
+        self.assertIsInstance(contexto, dict)
+
+    def test_analizar_condiciones_estructura_respuesta(self) -> None:
+        """Verifica que analizar_condiciones devuelva el contrato estructurado esperado para la IA."""
+        from core.ia_service import analizar_condiciones
+        resumen = "Temperatura Ambiente: Promedio 24.5 C. Humedad: 60%."
+        resultado = analizar_condiciones(
+            id_dispositivo="invernadero_01",
+            resumen_telemetria=resumen,
+        )
+        self.assertIsInstance(resultado, dict)
+        self.assertIn("estado_general", resultado)
+        self.assertIn("riesgo_detectado", resultado)
+        self.assertIn("evaluacion_humedad", resultado)
+        self.assertIn("evaluacion_luz", resultado)
+        self.assertIn("recomendacion_tecnica", resultado)
+
+    def test_esquema_dispositivo_con_id_invernadero(self) -> None:
+        """Verifica que los esquemas de dispositivos admitan la clave foranea id_invernadero."""
+        disp = DispositivoCrear(
+            id_dispositivo="nodo_01",
+            nombre="Nodo Sector Norte",
+            id_invernadero=1,
+            cultivo="Tomate",
+        )
+        self.assertEqual(disp.id_invernadero, 1)
+
+        actualizacion = DispositivoActualizar(id_invernadero=2)
+        self.assertEqual(actualizacion.id_invernadero, 2)
+
+        resp = DispositivoRespuesta(
+            id_dispositivo="nodo_01",
+            nombre="Nodo Sector Norte",
+            id_invernadero=1,
+        )
+        self.assertEqual(resp.id_invernadero, 1)
+
 if __name__ == "__main__":
     unittest.main()

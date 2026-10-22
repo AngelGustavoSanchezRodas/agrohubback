@@ -6,7 +6,7 @@ from typing import Any
 from core.config import settings
 from core.cultivos import CULTIVO_POR_DEFECTO, normalizar_cultivo
 from core.data_service import obtener_historial_reciente, formatear_datos_para_ia
-from core.ia_service import analizar_condiciones_agricolas
+from core.ia_service import analizar_condiciones, analizar_condiciones_agricolas
 from db.firebase_client import firebase_db
 from db.supabase_client import supabase
 
@@ -62,9 +62,10 @@ def ejecutar_barrido_diagnostico_ia() -> dict[str, Any]:
                 continue
 
             resumen_historico = formatear_datos_para_ia(historial)
-            diagnostico_ia = analizar_condiciones_agricolas(
-                resumen_historico=resumen_historico,
-                cultivo=cultivo,
+            diagnostico_ia = analizar_condiciones(
+                id_dispositivo=id_disp,
+                resumen_telemetria=resumen_historico,
+                cultivo_override=cultivo,
             )
 
             riesgo = diagnostico_ia.get("riesgo_detectado", "NINGUNO")

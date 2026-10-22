@@ -39,6 +39,31 @@ def obtener_historial_general(limite: int = 50) -> list[dict[str, Any]]:
         logger.error("Error al obtener historial general de telemetria: %s", str(e))
         return []
 
+def obtener_contexto_invernadero(id_dispositivo: str) -> dict[str, Any]:
+    """
+    Extrae los datos fisicos y agronomicos del invernadero asociado
+    al dispositivo a traves de la relacion con la tabla invernaderos en Supabase.
+    """
+    try:
+        # Extraer datos fisicos a traves de la relacion creada
+        respuesta = (
+            supabase.table("dispositivos")
+            .select("id_invernadero, invernaderos(tipo_cultivo, ubicacion, area_m2)")
+            .eq("id_dispositivo", id_dispositivo)
+            .execute()
+        )
+
+        if respuesta.data and len(respuesta.data) > 0:
+            datos_invernadero = respuesta.data[0].get("invernaderos")
+            if isinstance(datos_invernadero, dict):
+                return datos_invernadero
+            if isinstance(datos_invernadero, list) and len(datos_invernadero) > 0 and isinstance(datos_invernadero[0], dict):
+                return datos_invernadero[0]
+    except Exception as e:
+        logger.error("Error al extraer contexto fisico para el dispositivo %s: %s", id_dispositivo, str(e))
+    return {}
+
+
 def formatear_datos_para_ia(datos_crudos: list[dict[str, Any]]) -> str:
     """
     Toma un bloque cronologico de lecturas de telemetria y calcula metricas

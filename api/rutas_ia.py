@@ -14,8 +14,12 @@ from core.cultivos import (
     normalizar_cultivo,
     sanitizar_nombre_cultivo,
 )
-from core.data_service import obtener_historial_reciente, formatear_datos_para_ia
-from core.ia_service import analizar_condiciones_agricolas
+from core.data_service import (
+    obtener_historial_reciente,
+    formatear_datos_para_ia,
+    obtener_contexto_invernadero,
+)
+from core.ia_service import analizar_condiciones, analizar_condiciones_agricolas
 from core.ia_scheduler import ejecutar_barrido_diagnostico_ia, estado_scheduler
 from db.firebase_client import firebase_db
 from db.supabase_client import supabase, asegurar_dispositivo_registrado
@@ -137,8 +141,8 @@ def solicitar_analisis_ia(
     cultivo: str | None = None,
 ) -> dict[str, Any]:
     """
-    Diagnostico bajo demanda segun el cultivo del invernadero.
-    Si no se envia cultivo, usa el guardado en dispositivos o Tomate.
+    Diagnostico bajo demanda segun el contexto fisico del invernadero y telemetria reciente.
+    Si no se envia cultivo, usa el asignado al invernadero o guardado en dispositivos.
     """
     historial = obtener_historial_reciente(id_dispositivo, limite=20)
 
@@ -148,14 +152,20 @@ def solicitar_analisis_ia(
             detail=f"El dispositivo '{id_dispositivo}' no cuenta con lecturas de telemetria en la base de datos.",
         )
 
-    cultivo_efectivo = normalizar_cultivo(cultivo) if cultivo else _obtener_cultivo_dispositivo(id_dispositivo)
+    contexto = obtener_contexto_invernadero(id_dispositivo)
+    cultivo_invernadero = contexto.get("tipo_cultivo")
+
+    cultivo_efectivo = normalizar_cultivo(cultivo) if cultivo else (
+        normalizar_cultivo(cultivo_invernadero) if cultivo_invernadero else _obtener_cultivo_dispositivo(id_dispositivo)
+    )
     if cultivo:
         _guardar_cultivo_dispositivo(id_dispositivo, cultivo_efectivo)
 
     resumen_historico = formatear_datos_para_ia(historial)
-    diagnostico_ia = analizar_condiciones_agricolas(
-        resumen_historico=resumen_historico,
-        cultivo=cultivo_efectivo,
+    diagnostico_ia = analizar_condiciones(
+        id_dispositivo=id_dispositivo,
+        resumen_telemetria=resumen_historico,
+        cultivo_override=cultivo_efectivo if cultivo else None,
     )
 
     try:
@@ -173,6 +183,7 @@ def solicitar_analisis_ia(
         "dispositivo": id_dispositivo,
         "cultivo": cultivo_efectivo,
         "contexto_analizado": resumen_historico,
+        "contexto_fisico": contexto,
         "diagnostico": diagnostico_ia,
     }
 
