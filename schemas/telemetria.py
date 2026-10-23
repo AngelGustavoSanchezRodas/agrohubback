@@ -28,6 +28,11 @@ class PayloadESP32(BaseModel):
         le=100.0, 
         description="Humedad del sustrato en %"
     )
+    intensidad_luz_lux: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Iluminancia en lux proveniente del sensor TSL2561 o sensor de luz"
+    )
     estado_bomba: bool = Field(
         default=False, 
         description="Estado del rele de riego"

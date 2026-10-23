@@ -40,11 +40,15 @@ def lectura_desde_estado(id_dispositivo: str, estado: dict[str, Any]) -> Payload
     if temperatura is None or humedad_ambiente is None or humedad_suelo is None:
         return None
 
+    lux = numero_finito(estado.get("intensidad_luz_lux"))
+    intensidad_luz = max(0.0, lux) if lux is not None else 0.0
+
     return PayloadESP32(
         id_dispositivo=id_dispositivo,
         temperatura=min(80.0, max(-10.0, temperatura)),
         humedad_ambiente=min(100.0, max(0.0, humedad_ambiente)),
         humedad_suelo=min(100.0, max(0.0, humedad_suelo)),
+        intensidad_luz_lux=intensidad_luz,
         estado_bomba=bool(estado.get("estado_bomba")),
     )
 
@@ -84,6 +88,7 @@ def persistir_payload_telemetria(datos: dict[str, Any]) -> bool:
             "temperatura": payload.temperatura,
             "humedad_ambiente": payload.humedad_ambiente,
             "humedad_suelo": payload.humedad_suelo,
+            "intensidad_luz_lux": payload.intensidad_luz_lux,
             "estado_bomba": payload.estado_bomba,
             "indice_calor": indice,
         }
@@ -194,6 +199,31 @@ def procesar_nueva_telemetria(event: Any) -> None:
         logger.warning("Error de validacion Pydantic en datos de Firebase: %s", str(e))
     except Exception as e:
         logger.error("Error inesperado en procesar_nueva_telemetria: %s", str(e), exc_info=True)
+
+
+def procesar_dato_entrante(evento: Any) -> None:
+    """
+    Procesa un evento entrante e inserta la telemetria en la tabla telemetria_historica de Supabase,
+    incluyendo la intensidad de luz en lux (intensidad_luz_lux).
+    """
+    if evento is None:
+        return
+
+    datos = getattr(evento, "data", None) if not isinstance(evento, dict) else evento
+    if isinstance(datos, dict) and "temperatura" in datos:
+        try:
+            id_disp = str(datos.get("id_dispositivo") or "invernadero_prueba_01").strip()
+            asegurar_dispositivo_registrado(id_disp)
+            supabase.table("telemetria_historica").insert({
+                "id_dispositivo": id_disp,
+                "temperatura": datos.get("temperatura"),
+                "humedad_ambiente": datos.get("humedad_ambiente"),
+                "humedad_suelo": datos.get("humedad_suelo"),
+                "intensidad_luz_lux": datos.get("intensidad_luz_lux", 0),
+            }).execute()
+            logger.info("Telemetria guardada exitosamente en Supabase para %s", id_disp)
+        except Exception as e:
+            logger.error("Error al guardar en Supabase: %s", str(e), exc_info=True)
 
 
 # Alias para maxima compatibilidad

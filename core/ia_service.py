@@ -193,23 +193,23 @@ def analizar_condiciones(
     cultivo = (
         cultivo_override
         or contexto.get("tipo_cultivo")
-        or "Cultivo no especificado"
+        or "Cultivo genérico"
     )
-    ubicacion = contexto.get("ubicacion") or "Ubicación desconocida"
-    area = contexto.get("area_m2") or "Área no definida"
+    ubicacion = contexto.get("ubicacion") or "Ubicación no especificada"
+    area = contexto.get("area_m2") or "Área desconocida"
 
     prompt = f"""
-Eres un ingeniero agrónomo experto. Evalúa el siguiente entorno productivo:
+Eres un ingeniero agrónomo experto. Evalúa este entorno:
 
-CONTEXTO FÍSICO:
+[CONTEXTO FÍSICO]
 - Cultivo: {cultivo}
 - Ubicación: {ubicacion}
-- Área de producción: {area} m2
+- Área: {area} m2
 
-HISTORIAL MICROCLIMÁTICO (24h):
-{resumen_telemetria}
+[TELEMETRÍA RECIENTE]
+{resumen_telemetria} (Incluye niveles de luminosidad en Lux)
 
-Considerando el clima típico de {ubicacion}, genera un diagnóstico de riesgos y recomendaciones específicas para el cultivo de {cultivo}.
+Genera un diagnóstico de riesgos (estrés hídrico, radiación solar, plagas) y recomendaciones precisas para {cultivo} en el clima de {ubicacion}.
 """
     return _ejecutar_diagnostico_gemini(prompt)
 

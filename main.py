@@ -12,6 +12,7 @@ from core.ia_scheduler import ciclo_programado_ia
 from core.puente_firebase import (
     iniciar_listener_firebase,
     cerrar_listener_firebase,
+    procesar_dato_entrante,
 )
 from api import (
     rutas_sensores,

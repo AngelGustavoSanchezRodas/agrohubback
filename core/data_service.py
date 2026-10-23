@@ -100,6 +100,7 @@ def formatear_datos_para_ia(datos_crudos: list[dict[str, Any]]) -> str:
     ]
     lux_promedio = sum(luces_lux) / len(luces_lux) if luces_lux else 0.0
     lux_min = min(luces_lux) if luces_lux else 0.0
+    lux_max = max(luces_lux) if luces_lux else 0.0
 
     bombas = [bool(d.get("estado_bomba")) for d in datos_crudos if d.get("estado_bomba") is not None]
     bomba_encendida = sum(1 for b in bombas if b)
@@ -119,8 +120,8 @@ def formatear_datos_para_ia(datos_crudos: list[dict[str, Any]]) -> str:
     )
     if luces_lux:
         resumen += (
-            f"\n- Intensidad de luz TSL2561: Promedio {lux_promedio:.0f} lux "
-            f"(Minimo: {lux_min:.0f} lux)"
+            f"\n- Intensidad de luz (Lux): Promedio {lux_promedio:.0f} lux "
+            f"(Minimo: {lux_min:.0f} lux, Maximo: {lux_max:.0f} lux)"
         )
     if indices_calor:
         resumen += f"\n- Indice de calor promedio: {calor_promedio:.1f} C"

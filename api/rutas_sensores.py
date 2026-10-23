@@ -221,6 +221,7 @@ async def sincronizar_firebase_a_supabase(payload: PayloadESP32) -> dict[str, An
             "temperatura": payload.temperatura,
             "humedad_ambiente": payload.humedad_ambiente,
             "humedad_suelo": payload.humedad_suelo,
+            "intensidad_luz_lux": payload.intensidad_luz_lux,
             "estado_bomba": payload.estado_bomba,
             "indice_calor": indice_calculado
         }

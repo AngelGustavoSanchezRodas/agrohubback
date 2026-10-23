@@ -159,7 +159,7 @@ class TestEsquemasYLogica(unittest.TestCase):
         self.assertEqual(payload.humedad_ambiente, 60.0)
         self.assertEqual(payload.humedad_suelo, 45.0)
         self.assertFalse(payload.estado_bomba)
-        self.assertFalse(hasattr(payload, "intensidad_luz_lux"))
+        self.assertEqual(payload.intensidad_luz_lux, 0.0)
 
     def test_middleware_comunicacion_frontend_api_key(self) -> None:
         """Verifica que el middleware proteja la comunicacion exigiendo estrictamente X-API-Key sin bypass."""
@@ -400,6 +400,49 @@ class TestEsquemasYLogica(unittest.TestCase):
             id_invernadero=1,
         )
         self.assertEqual(resp.id_invernadero, 1)
+
+    def test_payload_esp32_con_intensidad_luz_lux(self) -> None:
+        """Verifica que PayloadESP32 admita el campo intensidad_luz_lux correctamente."""
+        datos = {
+            "id_dispositivo": "invernadero_prueba_01",
+            "temperatura": 25.0,
+            "humedad_ambiente": 62.0,
+            "humedad_suelo": 48.0,
+            "intensidad_luz_lux": 1450.5,
+        }
+        payload = PayloadESP32(**datos)
+        self.assertEqual(payload.intensidad_luz_lux, 1450.5)
+
+    def test_procesar_dato_entrante_guarda_en_supabase(self) -> None:
+        """Verifica que procesar_dato_entrante procese el evento e intente la insercion con luz."""
+        from unittest.mock import patch, MagicMock
+        from core.puente_firebase import procesar_dato_entrante
+
+        class EventoPrueba:
+            data = {
+                "id_dispositivo": "invernadero_prueba_01",
+                "temperatura": 23.4,
+                "humedad_ambiente": 55.0,
+                "humedad_suelo": 42.0,
+                "intensidad_luz_lux": 1200.0,
+            }
+
+        with patch("core.puente_firebase.supabase") as mock_sb:
+            mock_table = MagicMock()
+            mock_insert = MagicMock()
+            mock_execute = MagicMock()
+            mock_sb.table.return_value = mock_table
+            mock_table.insert.return_value = mock_insert
+            mock_insert.execute.return_value = mock_execute
+
+            procesar_dato_entrante(EventoPrueba())
+
+            mock_sb.table.assert_called_with("telemetria_historica")
+            mock_table.insert.assert_called_once()
+            args_insertados = mock_table.insert.call_args[0][0]
+            self.assertEqual(args_insertados["id_dispositivo"], "invernadero_prueba_01")
+            self.assertEqual(args_insertados["temperatura"], 23.4)
+            self.assertEqual(args_insertados["intensidad_luz_lux"], 1200.0)
 
 if __name__ == "__main__":
     unittest.main()
